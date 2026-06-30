@@ -76,7 +76,9 @@
   const STATI = ["P", "A", "L"];
   const STATO_LABEL = { P: "Presente", A: "Assente", L: "Altra locazione" };
 
-  function save() { localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+  function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { /* storage non disponibile */ } }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 
   function normalize(db) {
     for (const a of db.assegnazioni) {
@@ -110,6 +112,9 @@
     return "v-" + s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
+  const AREA_COLORS = { "a-pulizia": "#22d3ee", "a-cucina": "#f472b6", "a-clienti": "#a78bfa" };
+  const AREA_FALLBACK = ["#22d3ee", "#f472b6", "#a78bfa", "#34d399", "#f59e0b", "#60a5fa"];
+  function areaColor(areaId, i) { return AREA_COLORS[areaId] || AREA_FALLBACK[i % AREA_FALLBACK.length]; }
 
   /* ============ navigazione ============ */
   function setView(view) { STATE.view = view; render(); }
@@ -163,17 +168,16 @@
     const perArea = el("div", { class: "section glass" },
       el("div", { class: "head" }, el("h2", {}, "🗂️ Per area")));
     const ag = el("div", { class: "grid cards" });
-    for (const a of DB.aree) {
+    DB.aree.forEach((a, i) => {
       const nVol = new Set(DB.assegnazioni
         .filter((x) => a.postazioni.some((p) => p.id === x.postazioneId))
         .map((x) => x.volontarioId)).size;
-      ag.append(el("div", { class: "card glass", style: "cursor:pointer",
+      ag.append(el("div", { class: "card glass area-card", style: "--ac:" + areaColor(a.id, i),
         onclick: () => setView("postazioni") },
         el("h3", {}, a.nome),
-        el("div", { class: "stat" }, nVol, el("small", {}, " volontari")),
-        el("div", { class: "tags", style: "color:var(--text-dim);font-size:.8rem" },
-          a.postazioni.map((p) => p.nome).join(" · "))));
-    }
+        el("div", { class: "stat" }, String(nVol), el("small", {}, " volontari")),
+        el("div", { class: "tags" }, a.postazioni.map((p) => p.nome).join(" · "))));
+    });
     perArea.append(ag);
     wrap.append(perArea);
     return wrap;
@@ -324,13 +328,13 @@
   function viewPostazioni() {
     const wrap = el("div");
     wrap.append(legend());
-    for (const a of DB.aree) {
-      const sec = el("div", { class: "section glass" },
-        el("div", { class: "head" }, el("h2", {}, "🗂️ " + a.nome),
+    DB.aree.forEach((a, i) => {
+      const sec = el("div", { class: "section glass area-sec", style: "--ac:" + areaColor(a.id, i) },
+        el("div", { class: "head" }, el("h2", {}, a.nome),
           el("span", { class: "pill" }, a.postazioni.length + " postazioni")));
       for (const p of a.postazioni) sec.append(postazioneBlock(p));
       wrap.append(sec);
-    }
+    });
     return wrap;
   }
   function legend() {
@@ -431,8 +435,8 @@
     wrap.append(picker);
 
     const d = DB.festa.date[STATE.day];
-    for (const a of DB.aree) {
-      const sec = el("div", { class: "section glass" },
+    DB.aree.forEach((a, ai) => {
+      const sec = el("div", { class: "section glass area-sec", style: "--ac:" + areaColor(a.id, ai) },
         el("div", { class: "head" }, el("h2", {}, a.nome)));
       const grid = el("div", { class: "grid daygrid" });
       for (const p of a.postazioni) {
@@ -459,7 +463,7 @@
       }
       sec.append(grid);
       wrap.append(sec);
-    }
+    });
     return wrap;
   }
 
@@ -552,7 +556,7 @@
   }
 
   function startApp() {
-    const saved = localStorage.getItem(LS_KEY);
+    const saved = lsGet(LS_KEY);
     DB = saved ? normalize(JSON.parse(saved)) : normalize(window.__SEED_DECRYPTED);
     if (!saved) save();
     delete window.__SEED_DECRYPTED;
@@ -597,8 +601,17 @@
 
   /* ============ boot ============ */
   function boot() {
+    // anteprima/demo: dati iniettati direttamente, niente login
+    if (window.GV_BOOTSTRAP) {
+      DB = normalize(window.GV_BOOTSTRAP);
+      save();
+      document.querySelector(".app").style.display = "";
+      wireChrome();
+      render();
+      return;
+    }
     if (!window.SEED_ENC) { document.body.innerHTML = "<p style='padding:40px'>Dati cifrati non trovati (seed.enc.js).</p>"; return; }
-    if (sessionStorage.getItem(SESS_KEY) && localStorage.getItem(LS_KEY)) {
+    if (ssGet(SESS_KEY) && lsGet(LS_KEY)) {
       // già sbloccato in questa sessione e dati locali presenti
       startApp();
     } else {
