@@ -54,18 +54,20 @@
   const b64dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
   async function decryptSeed(password) {
-    const E = window.SEED_ENC;
-    const baseKey = await crypto.subtle.importKey(
-      "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]
-    );
-    const key = await crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt: b64dec(E.salt), iterations: 200000, hash: "SHA-256" },
-      baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
-    );
-    const pt = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: b64dec(E.iv) }, key, b64dec(E.ct)
-    );
-    return JSON.parse(new TextDecoder().decode(pt));
+    const blobs = Array.isArray(window.SEED_ENC) ? window.SEED_ENC : [window.SEED_ENC];
+    const rawKey = new TextEncoder().encode(password);
+    for (const E of blobs) {
+      try {
+        const baseKey = await crypto.subtle.importKey("raw", rawKey, "PBKDF2", false, ["deriveKey"]);
+        const key = await crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt: b64dec(E.salt), iterations: 200000, hash: "SHA-256" },
+          baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+        );
+        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64dec(E.iv) }, key, b64dec(E.ct));
+        return JSON.parse(new TextDecoder().decode(pt));
+      } catch (_) { /* prova il prossimo blob */ }
+    }
+    throw new Error("password errata");
   }
 
   /* ============ stato ============ */
@@ -296,7 +298,8 @@
         class: "search", placeholder: "Cerca volontario…", value: STATE.search,
         oninput: (e) => { STATE.search = e.target.value; refreshVList(); },
       }),
-      el("button", { class: "btn primary", onclick: () => editVolontario(null) }, "➕ Aggiungi"));
+      el("button", { class: "btn primary", onclick: () => editVolontario(null) }, "➕ Aggiungi"),
+      el("button", { class: "btn", onclick: exportMagliette }, "👕 CSV magliette"));
     wrap.append(head);
 
     const toolbar = el("div", { class: "vtoolbar" },
@@ -350,11 +353,14 @@
       const zero = pres === 0;
       const presBadge = el("span", { class: "pres-badge " + (zero ? "pres-zero" : "pres-ok") },
         `${pres}/${total} gg`);
+      const tagliaBadge = v.taglia
+        ? el("span", { class: "pres-badge taglia-badge" }, v.taglia)
+        : el("span", { class: "pres-badge pres-zero", title: "Taglia non impostata" }, "—");
       const row = el("div", { class: "vrow" + (zero ? " vrow-zero" : "") },
         el("div", { class: "avatar" + (zero ? " avatar-zero" : "") }, initials(v.nome)),
         el("div", { class: "meta", style: "cursor:pointer", onclick: () => personDetail(v.id) },
           el("div", { class: "nm" }, v.nome),
-          el("div", { class: "tags" }, ass.length + " postaz. · ", presBadge)),
+          el("div", { class: "tags" }, ass.length + " postaz. · ", presBadge, " · ", tagliaBadge)),
         el("div", { class: "acts" },
           el("button", { class: "btn sm", title: "Modifica", onclick: () => editVolontario(v.id) }, "✏️"),
           el("button", { class: "btn sm danger", title: "Elimina", onclick: () => removeVolontario(v.id) }, "🗑️")));
@@ -362,11 +368,17 @@
     }
   }
 
+  const TAGLIE = ["", "XS", "S", "M", "L", "XL", "XXL"];
+
   function editVolontario(id) {
     if (guardReadonly()) return;
     const v = id ? volById(id) : null;
     const assigned = new Set((id ? assegByVol(id) : []).map((a) => a.postazioneId));
     const nameInput = el("input", { value: v ? v.nome : "", placeholder: "Nome e cognome" });
+    const tagliaSelect = el("select", {});
+    TAGLIE.forEach((t) => tagliaSelect.append(
+      el("option", { value: t, ...(( v?.taglia || "") === t ? { selected: true } : {}) },
+        t || "— non specificata —")));
     const checks = el("div", { class: "checks" });
     for (const p of allPostazioni()) {
       const cb = el("input", { type: "checkbox" });
@@ -378,6 +390,7 @@
     const modal = el("div", {},
       el("h3", {}, id ? "Modifica volontario" : "Nuovo volontario"),
       el("div", { class: "field" }, el("label", {}, "Nome"), nameInput),
+      el("div", { class: "field" }, el("label", {}, "Taglia maglietta"), tagliaSelect),
       el("div", { class: "field" },
         el("label", {}, "Postazioni assegnate (nuovi turni = tutti Presente)"), checks),
       el("div", { class: "row" },
@@ -396,6 +409,8 @@
         vol = { id: newId, nome };
         DB.volontari.push(vol);
       } else { vol.nome = nome; }
+      if (tagliaSelect.value) vol.taglia = tagliaSelect.value;
+      else delete vol.taglia;
       const wanted = new Set([...checks.querySelectorAll("input:checked")].map((c) => c.dataset.pos));
       // rimuovi deselezionate
       DB.assegnazioni = DB.assegnazioni.filter(
@@ -535,9 +550,12 @@
       tr.append(nameTd);
       DB.festa.date.forEach((d) => {
         const isConflict = a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2;
+        const conflictNames = isConflict ? DB.assegnazioni.filter(
+          (x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[d] === "P"
+        ).map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ") : null;
         const btn = el("button", {
           class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
-          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche altrove!" : ""),
+          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche a: " + conflictNames : ""),
         }, a.giorni[d]);
         btn.addEventListener("click", () => {
           if (guardReadonly()) return;
@@ -555,7 +573,7 @@
             const names = others.map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ");
             toast("⚠️ " + v.nome + " è già P a: " + names);
             btn.classList.add("conflict");
-            btn.title += " · anche altrove!";
+            btn.title = STATO_LABEL["P"] + " · anche a: " + names;
           }
           // aggiorna totale del giorno
           const tc = dayTotCells[d];
@@ -717,6 +735,19 @@
     URL.revokeObjectURL(url);
     toast("Esportato");
   }
+  function exportMagliette() {
+    const rows = ["Nome,Taglia"];
+    DB.volontari.slice()
+      .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+      .forEach((v) => rows.push(`"${v.nome}","${v.taglia || ""}"`));
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: "magliette-festa-rocca-2026.csv" });
+    document.body.append(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("CSV magliette esportato (" + DB.volontari.length + " righe)");
+  }
+
   function importJSON(file) {
     const r = new FileReader();
     r.onload = () => {

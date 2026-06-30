@@ -231,6 +231,7 @@ table.grid-t td.name span[style]:hover { color: var(--accent); text-decoration: 
 .cellbtn.A { background: var(--a); color: #fff; border-color: transparent; }
 .cellbtn.L { background: var(--l); color: #fff; border-color: transparent; }
 .cellbtn.P.conflict { outline: 2px solid #f97316; outline-offset: 1px; }
+.taglia-badge { background: #e8eaf6; color: #3949ab; font-weight: 700; }
 .tot { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .rmx { margin-left: 7px; border: none; background: transparent; color: var(--a);
