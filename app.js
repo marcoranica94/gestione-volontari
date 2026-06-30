@@ -402,7 +402,11 @@
 
     const table = el("table", { class: "grid-t" });
     const thead = el("tr", {}, el("th", { class: "name" }, "Volontario"));
-    DB.festa.label.forEach((l) => thead.append(el("th", {}, l)));
+    DB.festa.label.forEach((l) => {
+      const parts = l.split(" ");
+      thead.append(el("th", {}, el("div", { class: "dh-wd" }, parts[0] || ""),
+        el("div", { class: "dh-n" }, parts[1] || l)));
+    });
     thead.append(el("th", {}, "Tot"));
     table.append(el("thead", {}, thead));
 

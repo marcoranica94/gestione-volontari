@@ -114,7 +114,7 @@ body {
 /* ---------- layout a colonne + drag&drop ---------- */
 .area-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
   gap: 16px;
   align-items: start;
   margin-top: 16px;
@@ -184,21 +184,28 @@ input::placeholder { color: var(--text-faint); }
 .posblock .ph { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; flex-wrap: wrap; }
 .posblock .ph h4 { font-size: 1rem; font-weight: 700; }
 
-/* ---------- tabella griglia ---------- */
+/* ---------- tabella griglia (compatta: sta intera nella colonna) ---------- */
 .tablewrap { overflow-x: auto; border-radius: var(--radius-3); border: 1px solid var(--line); background: var(--panel-solid); }
-table.grid-t { border-collapse: collapse; width: 100%; font-size: .84rem; }
-table.grid-t th, table.grid-t td { padding: 7px 6px; text-align: center; }
-table.grid-t thead th { color: var(--text-dim); font-weight: 600; font-size: .73rem; position: sticky; top: 0; background: #eef1f6; }
+table.grid-t { border-collapse: collapse; width: 100%; font-size: .82rem; }
+table.grid-t th, table.grid-t td { padding: 4px 2px; text-align: center; }
+table.grid-t thead th { color: var(--text-dim); font-weight: 600; position: sticky; top: 0; background: #eef1f6; }
 table.grid-t tbody tr { border-top: 1px solid var(--line); }
 table.grid-t tbody tr:hover { background: #f6f8fb; }
-table.grid-t td.name, table.grid-t th.name { text-align: left; white-space: nowrap; padding-left: 11px; font-weight: 600; min-width: 150px; }
+/* intestazione giorno su due righe */
+.dh-wd { font-size: .6rem; color: var(--text-faint); font-weight: 600; text-transform: lowercase; }
+.dh-n { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* nome: va a capo invece di allargare la colonna */
+table.grid-t td.name, table.grid-t th.name {
+  text-align: left; padding-left: 9px; font-weight: 600;
+  width: 116px; max-width: 116px; white-space: normal; word-break: break-word; line-height: 1.15;
+}
 table.grid-t td.name span[style] { cursor: pointer; }
 table.grid-t td.name span[style]:hover { color: var(--accent); text-decoration: underline; }
 
 .cellbtn {
-  width: 30px; height: 30px; border-radius: var(--radius-3); border: 1px solid var(--line);
+  width: 26px; height: 26px; border-radius: var(--radius-3); border: 1px solid var(--line);
   background: #fff; color: var(--text-faint); cursor: pointer; font-weight: 700;
-  font-size: .8rem; transition: .1s; font-variant-numeric: tabular-nums;
+  font-size: .76rem; transition: .1s; font-variant-numeric: tabular-nums;
 }
 .cellbtn:hover { border-color: var(--text-faint); }
 .cellbtn.P { background: var(--p); color: #fff; border-color: transparent; }
