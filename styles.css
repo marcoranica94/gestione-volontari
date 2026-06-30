@@ -268,13 +268,48 @@ table.grid-t tfoot tr { border-top: 2px solid var(--line-strong); }
 .legend .dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; }
 .dot.P { background: var(--p); } .dot.A { background: var(--a); } .dot.L { background: var(--l); }
 
-/* ---------- panoramica: copertura ---------- */
-.bars { display: flex; flex-direction: column; gap: 8px; }
-.barrow { display: flex; align-items: center; gap: 11px; }
-.barlab { width: 60px; font-size: .82rem; color: var(--text-dim); flex: 0 0 auto; font-weight: 600; }
-.bartrack { flex: 1; height: 14px; border-radius: var(--radius-3); background: #e4e8ef; overflow: hidden; }
-.barfill { height: 100%; border-radius: var(--radius-3); background: var(--accent); transition: width .4s; }
-.barval { width: 28px; text-align: right; font-weight: 700; font-size: .84rem; font-variant-numeric: tabular-nums; }
+/* ---------- dashboard: stat mini-card ---------- */
+.dash-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 0; }
+.dash-stat { padding: 14px 18px; }
+.ds-label { font-size: .72rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .45px; margin-bottom: 5px; }
+.ds-value { font-size: 2rem; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.ds-sub   { font-size: .77rem; color: var(--text-dim); margin-top: 3px; }
+.dash-stat.ds-bad  .ds-value { color: var(--a); }
+.dash-stat.ds-warn .ds-value { color: var(--l); }
+.dash-stat.ds-ok   .ds-value { color: var(--p); }
+
+/* ---------- dashboard: conflitti ---------- */
+.dash-conflict-sec { border-left: 3px solid var(--a); }
+.dash-conflict-title { color: var(--a); }
+.dash-conflict-list { display: flex; flex-direction: column; gap: 7px; }
+.dash-conflict-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: .88rem; }
+.dcr-nome { font-weight: 700; cursor: pointer; min-width: 160px; }
+.dcr-nome:hover { color: var(--accent); text-decoration: underline; }
+.dcr-days { display: flex; flex-wrap: wrap; gap: 5px; }
+.dcr-chip { background: rgba(210,68,90,.09); color: var(--a); padding: 2px 8px; border-radius: 5px; font-size: .8rem; }
+
+/* ---------- dashboard: griglia copertura ---------- */
+.cov-tablewrap { overflow-x: auto; }
+.cov-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.cov-pos-th  { text-align: left; padding: 6px 10px 6px 4px; font-size: .72rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+.cov-day-th  { padding: 4px 2px; text-align: center; cursor: pointer; min-width: 34px; border-radius: var(--radius-3); transition: .12s; }
+.cov-day-th:hover { background: var(--accent-soft); color: var(--accent); }
+.cov-dh-wd   { font-size: .68rem; font-weight: 600; color: var(--text-dim); }
+.cov-dh-n    { font-size: .82rem; font-weight: 700; }
+.cov-tot-th  { padding: 4px 6px; text-align: center; font-size: .72rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; }
+.cov-area-row td { padding: 10px 4px 3px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ac); border-bottom: 1px solid var(--line); }
+.cov-pos-row:hover td { background: var(--sub); }
+.cov-pos-name { padding: 5px 10px 5px 4px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.cov-pos-name:hover { color: var(--accent); text-decoration: underline; }
+.cov-cell { text-align: center; padding: 4px 2px; font-weight: 700; font-variant-numeric: tabular-nums; border-radius: 4px; min-width: 30px; font-size: .82rem; }
+.cov-cell.tot-neu { color: var(--text-faint); font-weight: 400; }
+.cov-total { text-align: center; padding: 4px 6px; font-weight: 700; color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: .8rem; }
+.cov-legend { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding-top: 12px; font-size: .78rem; color: var(--text-dim); }
+.dot-sq { display: inline-block; width: 13px; height: 13px; border-radius: 3px; margin-left: 8px; }
+.dot-sq.tot-ok   { background: #d4f0e2; border: 1px solid #1a7f50; }
+.dot-sq.tot-warn { background: #fef3cc; border: 1px solid #8a6200; }
+.dot-sq.tot-bad  { background: #fde0e5; border: 1px solid #b3344a; }
+.dot-sq.tot-neu  { background: #e8eaee; border: 1px solid var(--line-strong); }
 
 /* ---------- dettaglio persona ---------- */
 .detail-days { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow: auto; padding-right: 4px; }

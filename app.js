@@ -205,58 +205,125 @@
   }
 
   /* ============ viste ============ */
+  function allConflicts() {
+    const out = [];
+    const seen = new Set();
+    for (const v of DB.volontari) {
+      for (let i = 0; i < DB.festa.date.length; i++) {
+        const d = DB.festa.date[i];
+        const pAss = DB.assegnazioni.filter((a) => a.volontarioId === v.id && a.giorni[d] === "P");
+        if (pAss.length >= 2) {
+          const key = v.id + "|" + d;
+          if (!seen.has(key)) {
+            seen.add(key);
+            out.push({ vol: v, dayIdx: i, nomi: pAss.map((a) => posInfo(a.postazioneId)?.nome || "?") });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
   function viewDashboard() {
     const wrap = el("div");
+
+    // ---- stat mini-cards ----
     const tot = DB.volontari.length;
     const nPos = allPostazioni().length;
-    const presenze = DB.volontari.reduce((s, v) => {
-      const ass = assegByVol(v.id);
-      return s + DB.festa.date.filter((d) => ass.some((a) => a.giorni[d] === "P")).length;
-    }, 0);
-
-    const cards = el("div", { class: "grid cards" },
-      statCard("Volontari", tot, "persone registrate"),
-      statCard("Postazioni", nPos, DB.aree.length + " aree"),
-      statCard("Assegnazioni", DB.assegnazioni.length, "volontario→postazione"),
-      statCard("Presenze totali", presenze, "turni 'P' nei 10 giorni"),
+    const nConfl = allConflicts().length;
+    const nTaglieMancanti = DB.volontari.filter((v) => !v.taglia).length;
+    const statsRow = el("div", { class: "dash-stats" },
+      dashStat("Volontari", tot, "registrati"),
+      dashStat("Postazioni", nPos, DB.aree.length + " aree"),
+      dashStat("Conflitti P", nConfl, nConfl === 0 ? "nessuno" : "doppi turni", nConfl > 0 ? "ds-bad" : "ds-ok"),
+      dashStat("Taglie mancanti", nTaglieMancanti, "magliette da impostare", nTaglieMancanti > 0 ? "ds-warn" : "ds-ok"),
     );
-    wrap.append(cards);
+    wrap.append(statsRow);
 
-    // copertura per giorno
-    const cov = el("div", { class: "section glass" },
-      el("div", { class: "head" }, el("h2", {}, "Copertura per giorno"),
-        el("span", { class: "pill" }, "volontari presenti")));
-    const maxPres = Math.max(1, ...DB.festa.date.map(dayPresenti));
-    const bars = el("div", { class: "bars" });
-    DB.festa.date.forEach((d, i) => {
-      const n = dayPresenti(d);
-      const row = el("div", { class: "barrow", title: n + " presenti" },
-        el("span", { class: "barlab" }, DB.festa.label[i]),
-        el("div", { class: "bartrack" },
-          el("div", { class: "barfill", style: `width:${(n / maxPres) * 100}%` })),
-        el("span", { class: "barval" }, n));
-      bars.append(row);
-    });
-    cov.append(bars);
-    wrap.append(cov);
+    // ---- riquadro conflitti ----
+    const conflicts = allConflicts();
+    if (conflicts.length) {
+      const byVol = {};
+      for (const c of conflicts) {
+        if (!byVol[c.vol.id]) byVol[c.vol.id] = { vol: c.vol, items: [] };
+        byVol[c.vol.id].items.push(c);
+      }
+      const alertSec = el("div", { class: "section glass dash-conflict-sec" },
+        el("div", { class: "head" },
+          el("h2", { class: "dash-conflict-title" }, "⚠️ Conflitti turno P"),
+          el("span", { class: "pill" }, conflicts.length + " casi")));
+      const list = el("div", { class: "dash-conflict-list" });
+      for (const { vol, items } of Object.values(byVol)) {
+        const row = el("div", { class: "dash-conflict-row" },
+          el("span", { class: "dcr-nome", style: "cursor:pointer", onclick: () => personDetail(vol.id) }, vol.nome),
+          el("span", { class: "dcr-days" },
+            ...items.map((c) => el("span", { class: "dcr-chip" },
+              el("b", {}, DB.festa.label[c.dayIdx] + ":"),
+              " " + c.nomi.join(" + ")))));
+        list.append(row);
+      }
+      alertSec.append(list);
+      wrap.append(alertSec);
+    }
 
-    // per area
-    const perArea = el("div", { class: "section glass" },
-      el("div", { class: "head" }, el("h2", {}, "Per area")));
-    const ag = el("div", { class: "grid cards" });
-    DB.aree.forEach((a, i) => {
-      const nVol = new Set(DB.assegnazioni
-        .filter((x) => a.postazioni.some((p) => p.id === x.postazioneId))
-        .map((x) => x.volontarioId)).size;
-      ag.append(el("div", { class: "card glass area-card", style: "--ac:" + areaColor(a.id, i),
-        onclick: () => setView("postazioni") },
-        el("h3", {}, a.nome),
-        el("div", { class: "stat" }, String(nVol), el("small", {}, " volontari")),
-        el("div", { class: "tags" }, a.postazioni.map((p) => p.nome).join(" · "))));
+    // ---- griglia copertura ----
+    const covSec = el("div", { class: "section glass" });
+    covSec.append(el("div", { class: "head" },
+      el("h2", {}, "Copertura postazioni"),
+      el("span", { class: "pill" }, "clic su un giorno → dettaglio · clic sul nome → postazione")));
+
+    const table = el("table", { class: "cov-table" });
+    const thead = el("thead", {});
+    const hrow = el("tr", {}, el("th", { class: "cov-pos-th" }, "Postazione"));
+    DB.festa.label.forEach((l, i) => {
+      const parts = l.split(" ");
+      hrow.append(el("th", { class: "cov-day-th", title: "Vai al giorno " + l,
+        onclick: () => { STATE.day = i; setView("giorno"); } },
+        el("div", { class: "cov-dh-wd" }, parts[0] || ""),
+        el("div", { class: "cov-dh-n" }, parts[1] || l)));
     });
-    perArea.append(ag);
-    wrap.append(perArea);
+    hrow.append(el("th", { class: "cov-tot-th" }, "Tot"));
+    thead.append(hrow);
+    table.append(thead);
+
+    const tbody = el("tbody", {});
+    DB.aree.forEach((a, ai) => {
+      tbody.append(el("tr", { class: "cov-area-row" },
+        el("td", { colspan: DB.festa.date.length + 2, class: "cov-area-label",
+          style: "--ac:" + areaColor(a.id, ai) }, a.nome)));
+      for (const p of a.postazioni) {
+        const ass = assegByPos(p.id);
+        const tr = el("tr", { class: "cov-pos-row" },
+          el("td", { class: "cov-pos-name", onclick: () => gotoPostazione(p.id) }, p.nome));
+        let totP = 0;
+        DB.festa.date.forEach((d) => {
+          const n = ass.filter((x) => x.giorni[d] === "P").length;
+          totP += n;
+          tr.append(el("td", { class: "cov-cell " + sogliaCls(p.id, n) }, n > 0 ? String(n) : "·"));
+        });
+        tr.append(el("td", { class: "cov-total" }, String(totP)));
+        tbody.append(tr);
+      }
+    });
+    table.append(tbody);
+    covSec.append(el("div", { class: "cov-tablewrap" }, table));
+
+    // legenda soglie
+    covSec.append(el("div", { class: "cov-legend" },
+      el("span", { class: "dot-sq tot-ok" }), "copertura ok",
+      el("span", { class: "dot-sq tot-warn" }), "parziale",
+      el("span", { class: "dot-sq tot-bad" }), "insufficiente",
+      el("span", { class: "dot-sq tot-neu" }), "senza soglia"));
+    wrap.append(covSec);
+
     return wrap;
+  }
+
+  function dashStat(label, value, sub, mod) {
+    return el("div", { class: "card glass dash-stat" + (mod ? " " + mod : "") },
+      el("div", { class: "ds-label" }, label),
+      el("div", { class: "ds-value" }, String(value)),
+      el("div", { class: "ds-sub" }, sub));
   }
   function dayPresenti(d) {
     return new Set(DB.assegnazioni.filter((a) => a.giorni[d] === "P")
