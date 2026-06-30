@@ -1,0 +1,13 @@
+# Dati in chiaro: NON devono finire nel repo pubblico (la versione cifrata è seed.enc.js)
+data.plain.json
+seed.js
+*.xlsx
+*.xlsx:Zone.Identifier
+*:Zone.Identifier
+
+# Export locali
+festa-rocca-2026.json
+
+# Vari
+node_modules/
+.DS_Store

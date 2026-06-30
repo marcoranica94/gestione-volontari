@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gestione Volontari · Festa in Rocca</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎪</text></svg>">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app" style="display:none">
+    <header class="topbar">
+      <div class="brand">
+        <h1>🎪 <span id="festaName">Festa</span></h1>
+        <span class="sub" id="festaSub">Gestione volontari e postazioni</span>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="btnImport">📂 Importa</button>
+      <button class="btn" id="btnExport">💾 Esporta</button>
+      <button class="btn" id="btnPrint">🖨️ Stampa A5</button>
+      <input type="file" id="fileInput" accept="application/json" hidden />
+    </header>
+
+    <nav class="glass tabs" id="tabs">
+      <button class="tab active" data-view="dashboard">📊 Panoramica</button>
+      <button class="tab" data-view="volontari">👥 Volontari</button>
+      <button class="tab" data-view="postazioni">📍 Postazioni</button>
+      <button class="tab" data-view="giorno">📅 Per giorno</button>
+    </nav>
+
+    <main id="view"></main>
+  </div>
+
+  <!-- Print render target -->
+  <div class="print-only" id="printArea"></div>
+
+  <div id="modalRoot"></div>
+  <div class="toast glass" id="toast"></div>
+
+  <script src="seed.enc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
