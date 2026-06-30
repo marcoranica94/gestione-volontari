@@ -366,7 +366,8 @@
         oninput: (e) => { STATE.search = e.target.value; refreshVList(); },
       }),
       el("button", { class: "btn primary", onclick: () => editVolontario(null) }, "➕ Aggiungi"),
-      el("button", { class: "btn", onclick: exportMagliette }, "👕 CSV magliette"));
+      el("button", { class: "btn", onclick: exportMagliette }, "CSV magliette"),
+      el("button", { class: "btn", onclick: printMagliette }, "Stampa magliette"));
     wrap.append(head);
 
     const toolbar = el("div", { class: "vtoolbar" },
@@ -790,6 +791,41 @@
       }
       area.append(page);
     }
+    window.print();
+  }
+
+  /* ============ stampa magliette A4 portrait 4 colonne ============ */
+  let _pageStyleEl = null;
+  function setPageSize(rule) {
+    if (!_pageStyleEl) { _pageStyleEl = document.createElement("style"); document.head.append(_pageStyleEl); }
+    _pageStyleEl.textContent = rule ? "@page{" + rule + "}" : "";
+  }
+
+  function printMagliette() {
+    const area = $("#printArea");
+    area.innerHTML = "";
+    setPageSize("size:A4 portrait;margin:14mm 12mm");
+    window.addEventListener("afterprint", () => setPageSize(""), { once: true });
+
+    const vols = DB.volontari.slice().sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+    const nMiss = vols.filter((v) => !v.taglia).length;
+
+    const page = el("div", { class: "pm-page" });
+    page.append(el("div", { class: "pm-head" },
+      el("h1", {}, DB.festa.nome + " · Lista magliette"),
+      el("div", { class: "pm-sub" },
+        vols.length + " volontari" +
+        (nMiss ? " · " + nMiss + " taglia non impostata" : ""))));
+
+    const list = el("div", { class: "pm-list" });
+    vols.forEach((v, i) => {
+      list.append(el("div", { class: "pm-row" },
+        el("span", { class: "pm-num" }, String(i + 1)),
+        el("span", { class: "pm-nome" }, v.nome),
+        el("span", { class: "pm-taglia" + (v.taglia ? "" : " pm-taglia-miss") }, v.taglia || "—")));
+    });
+    page.append(list);
+    area.append(page);
     window.print();
   }
 

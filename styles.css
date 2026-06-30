@@ -418,13 +418,16 @@ body.is-readonly .draghandle { cursor: default; opacity: .2; }
 /* ---------- accessibilità ---------- */
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* ---------- stampa A5 (una sezione per foglio, orizzontale) ---------- */
+/* ---------- stampa ---------- */
 .print-only { display: none; }
+@page { size: A5 landscape; margin: 8mm; }   /* default: usato da buildPrint */
+
 @media print {
   body { background: #fff !important; color: #000; }
-  .app, .topbar, .tabs, .section, .no-print, #loginRoot, #modalRoot { display: none !important; }
+  .app, .topbar, .tabs, .section, .no-print, #loginRoot, #modalRoot, .toast { display: none !important; }
   .print-only { display: block; }
-  @page { size: A5 landscape; margin: 8mm; }
+
+  /* --- postazioni A5 landscape --- */
   .p-day { page-break-after: always; }
   .p-day:last-child { page-break-after: auto; }
   .p-head { text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 8px; }
@@ -437,4 +440,30 @@ body.is-readonly .draghandle { cursor: default; opacity: .2; }
   table.p-grid td.pn, table.p-grid th.pn { text-align: left; white-space: nowrap; padding-left: 5pt; min-width: 90pt; }
   table.p-grid td.cP { background: #cdebdd; font-weight: 700; }
   table.p-grid td.cL { background: #fdeecb; font-weight: 700; }
+
+  /* --- magliette A4 portrait 4 colonne --- */
+  .pm-page  { font-family: "Segoe UI", system-ui, sans-serif; }
+  .pm-head  { border-bottom: 1.5pt solid #000; padding-bottom: 5pt; margin-bottom: 7pt; }
+  .pm-head h1  { font-size: 13pt; font-weight: 700; }
+  .pm-sub   { font-size: 8.5pt; color: #555; margin-top: 2pt; }
+  .pm-list  {
+    column-count: 4;
+    column-gap: 7mm;
+    column-rule: .4pt solid #ccc;
+    margin-top: 4pt;
+  }
+  .pm-row   {
+    display: flex;
+    align-items: baseline;
+    gap: 3pt;
+    padding: 1.5pt 0;
+    border-bottom: .2pt solid #e8e8e8;
+    break-inside: avoid;
+    font-size: 8.5pt;
+    line-height: 1.35;
+  }
+  .pm-num   { color: #aaa; font-size: 7pt; min-width: 14pt; flex: 0 0 auto; }
+  .pm-nome  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-taglia      { font-weight: 700; min-width: 16pt; text-align: right; flex: 0 0 auto; }
+  .pm-taglia-miss { color: #bbb; font-weight: 400; }
 }
