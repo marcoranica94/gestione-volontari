@@ -758,39 +758,63 @@
     return wrap;
   }
 
-  /* ============ stampa A5 (una sezione per foglio) ============ */
+  /* ============ stampa A5 (1-2 fogli per area) ============ */
   function buildPrint() {
     const area = $("#printArea");
     area.innerHTML = "";
-    const range = `${DB.festa.label[0]} – ${DB.festa.label[DB.festa.label.length - 1]} luglio 2026`;
-    for (const a of DB.aree) {
-      const page = el("div", { class: "p-day" });
+    setPageSize("size:A5 landscape;margin:7mm 8mm");
+    window.addEventListener("afterprint", () => setPageSize(""), { once: true });
+
+    const range = DB.festa.label[0] + " – " + DB.festa.label[DB.festa.label.length - 1] + " luglio 2026";
+
+    DB.aree.forEach((a, ai) => {
+      const page = el("div", { class: "p-area" + (ai < DB.aree.length - 1 ? " p-break" : "") });
       page.append(el("div", { class: "p-head" },
         el("h1", {}, DB.festa.nome + " · " + a.nome),
-        el("div", { class: "d" }, range + "  (lun 6 escluso)")));
+        el("div", { class: "d" }, range)));
+
       for (const p of a.postazioni) {
         const ass = assegByPos(p.id).slice()
           .sort((x, y) => volById(x.volontarioId).nome.localeCompare(volById(y.volontarioId).nome, "it"));
-        page.append(el("div", { class: "p-pos-title" }, p.nome));
-        if (!ass.length) { page.append(el("div", { class: "p-empty" }, "—")); continue; }
+        const sec = el("div", { class: "p-pos-sec" });
+        sec.append(el("div", { class: "p-pos-title" }, p.nome));
+        if (!ass.length) { sec.append(el("div", { class: "p-empty" }, "—")); page.append(sec); continue; }
+
         const t = el("table", { class: "p-grid" });
         const hr = el("tr", {}, el("th", { class: "pn" }, "Volontario"));
-        DB.festa.label.forEach((l) => hr.append(el("th", {}, l.replace(/\D+/g, ""))));
+        DB.festa.label.forEach((l) => {
+          const parts = l.split(" ");
+          hr.append(el("th", {}, el("span", {}, parts[0] || ""), el("br", {}), el("span", {}, parts[1] || "")));
+        });
+        hr.append(el("th", { class: "ptot" }, "Tot"));
         t.append(el("thead", {}, hr));
+
         const tb = el("tbody", {});
         for (const x of ass) {
           const tr = el("tr", {}, el("td", { class: "pn" }, volById(x.volontarioId).nome));
           DB.festa.date.forEach((dd) => {
             const s = x.giorni[dd];
-            tr.append(el("td", { class: "c" + s }, s === "A" ? "" : s));
+            tr.append(el("td", { class: "cS " + "c" + s }, s === "A" ? "" : s));
           });
+          tr.append(el("td", { class: "ptot" }, String(countP(x.giorni))));
           tb.append(tr);
         }
         t.append(tb);
-        page.append(t);
+
+        // riga totali
+        const tf = el("tr", { class: "p-tot-row" }, el("td", { class: "pn p-tot-lbl" }, "Presenti"));
+        DB.festa.date.forEach((dd) => {
+          const n = ass.filter((x) => x.giorni[dd] === "P").length;
+          tf.append(el("td", { class: "ptot-day " + sogliaCls(p.id, n) }, String(n)));
+        });
+        tf.append(el("td", {}));
+        t.append(el("tfoot", {}, tf));
+
+        sec.append(t);
+        page.append(sec);
       }
       area.append(page);
-    }
+    });
     window.print();
   }
 
