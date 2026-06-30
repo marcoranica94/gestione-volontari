@@ -112,8 +112,8 @@
     return "v-" + s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
-  const AREA_COLORS = { "a-pulizia": "#6aa6b3", "a-cucina": "#bf8499", "a-clienti": "#8b92cf" };
-  const AREA_FALLBACK = ["#6aa6b3", "#bf8499", "#8b92cf", "#7fa37e", "#c0a36a", "#7e8cc9"];
+  const AREA_COLORS = { "a-pulizia": "#2c8597", "a-cucina": "#a8527a", "a-clienti": "#5560a6" };
+  const AREA_FALLBACK = ["#2c8597", "#a8527a", "#5560a6", "#3f7d52", "#9a7b27", "#4d5da3"];
   function areaColor(areaId, i) { return AREA_COLORS[areaId] || AREA_FALLBACK[i % AREA_FALLBACK.length]; }
 
   /* ============ navigazione ============ */
@@ -188,7 +188,7 @@
 
     // copertura per giorno
     const cov = el("div", { class: "section glass" },
-      el("div", { class: "head" }, el("h2", {}, "📅 Copertura per giorno"),
+      el("div", { class: "head" }, el("h2", {}, "Copertura per giorno"),
         el("span", { class: "pill" }, "volontari presenti")));
     const maxPres = Math.max(1, ...DB.festa.date.map(dayPresenti));
     const bars = el("div", { class: "bars" });
@@ -206,7 +206,7 @@
 
     // per area
     const perArea = el("div", { class: "section glass" },
-      el("div", { class: "head" }, el("h2", {}, "🗂️ Per area")));
+      el("div", { class: "head" }, el("h2", {}, "Per area")));
     const ag = el("div", { class: "grid cards" });
     DB.aree.forEach((a, i) => {
       const nVol = new Set(DB.assegnazioni
@@ -236,7 +236,7 @@
   function viewVolontari() {
     const wrap = el("div", { class: "section glass" });
     const head = el("div", { class: "head" },
-      el("h2", {}, "👥 Volontari"),
+      el("h2", {}, "Volontari"),
       el("span", { class: "pill" }, DB.volontari.length + " totali"),
       el("input", {
         class: "search", placeholder: "🔎 Cerca volontario…", value: STATE.search,
@@ -347,7 +347,7 @@
           const info = posInfo(a.postazioneId);
           slot.append(el("button", { class: "chip linkchip",
             onclick: () => { closeModal(); gotoPostazione(a.postazioneId); } },
-            "📍 " + (info ? info.nome : "?")));
+            (info ? info.nome : "?")));
         });
       } else if (altrove.length) {
         slot.append(el("span", { class: "chip", style: "color:var(--l)" }, "altra locazione"));
