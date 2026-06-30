@@ -70,13 +70,23 @@
 
   /* ============ stato ============ */
   const LS_KEY = "gv-festa-rocca-2026";
+  const SNAPS_KEY = "gv-snapshots-rocca-2026";
   const SESS_KEY = "gv-unlocked";
   let DB = null;
-  const STATE = { view: "dashboard", search: "", day: 0 };
+  let LIVE_DB = null; // DB salvato quando si visualizza un'istantanea
+  const STATE = { view: "dashboard", search: "", sort: "nome-az", vfilter: "tutti", day: 0,
+    readonly: false, snapName: null, snapDate: null, hiddenAreas: [] };
   const STATI = ["P", "A", "L"];
   const STATO_LABEL = { P: "Presente", A: "Assente", L: "Altra locazione" };
 
-  function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { /* storage non disponibile */ } }
+  function save() {
+    if (STATE.readonly) return; // mai scrivere dati di un'istantanea nel localStorage
+    try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { /* storage non disponibile */ }
+  }
+  function guardReadonly() {
+    if (STATE.readonly) { toast("Sola lettura — esci dall'anteprima per modificare"); return true; }
+    return false;
+  }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 
@@ -104,6 +114,9 @@
   function assegByVol(volId) { return DB.assegnazioni.filter((a) => a.volontarioId === volId); }
   function countP(giorni) { return DB.festa.date.filter((d) => giorni[d] === "P").length; }
   function nextStato(s) { return s === "P" ? "A" : s === "A" ? "L" : "P"; }
+  function pCountOnDay(volId, day) {
+    return DB.assegnazioni.filter((a) => a.volontarioId === volId && a.giorni[day] === "P").length;
+  }
   function initials(nome) {
     const w = nome.trim().split(/\s+/);
     return ((w[0]?.[0] || "") + (w[1]?.[0] || "")).toUpperCase();
@@ -113,6 +126,23 @@
       .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
   const AREA_COLORS = { "a-pulizia": "#2c8597", "a-cucina": "#a8527a", "a-clienti": "#5560a6" };
+
+  // Soglie per i totali giornalieri: { warn: N, ok: M } → <warn=rosso, >=warn=giallo, >=ok=verde
+  const SOGLIE = {
+    "p-clienti-casse":       { warn: 3, ok: 3 }, // <3 rosso, 3+ verde
+    "p-clienti-cassa-veloce":{ warn: 3, ok: 3 },
+    "p-clienti-scansione":   { warn: 2, ok: 4 }, // <2 rosso, 2-3 giallo, 4+ verde
+    "p-clienti-bar":         { warn: 1, ok: 2 }, // 0 rosso, 1 giallo, 2+ verde
+    "p-clienti-pizze":       { warn: 1, ok: 2 }, // 0 rosso, 1 giallo, 2+ verde
+    "p-cucina-vassoi":       { warn: 5, ok: 6 }, // ≤4 rosso, 5 giallo, 6+ verde
+  };
+  function sogliaCls(posId, count) {
+    const s = SOGLIE[posId];
+    if (!s) return "tot-neu";
+    if (count >= s.ok) return "tot-ok";
+    if (count >= s.warn) return "tot-warn";
+    return "tot-bad";
+  }
   const AREA_FALLBACK = ["#2c8597", "#a8527a", "#5560a6", "#3f7d52", "#9a7b27", "#4d5da3"];
   function areaColor(areaId, i) { return AREA_COLORS[areaId] || AREA_FALLBACK[i % AREA_FALLBACK.length]; }
 
@@ -161,6 +191,7 @@
     });
   }
   function reorderAree(fromId, toId) {
+    if (guardReadonly()) return;
     if (!fromId || fromId === toId) return;
     const fromIdx = DB.aree.findIndex((a) => a.id === fromId);
     const toIdx = DB.aree.findIndex((a) => a.id === toId);
@@ -176,7 +207,10 @@
     const wrap = el("div");
     const tot = DB.volontari.length;
     const nPos = allPostazioni().length;
-    const presenze = DB.assegnazioni.reduce((s, a) => s + countP(a.giorni), 0);
+    const presenze = DB.volontari.reduce((s, v) => {
+      const ass = assegByVol(v.id);
+      return s + DB.festa.date.filter((d) => ass.some((a) => a.giorni[d] === "P")).length;
+    }, 0);
 
     const cards = el("div", { class: "grid cards" },
       statCard("Volontari", tot, "persone registrate"),
@@ -233,39 +267,94 @@
   }
 
   /* ---- Volontari ---- */
+  const SORT_OPTS = [
+    { key: "nome-az", label: "A→Z" },
+    { key: "nome-za", label: "Z→A" },
+    { key: "pres-desc", label: "Presenze ↓" },
+    { key: "pres-asc", label: "Presenze ↑" },
+    { key: "pos-desc", label: "Postazioni ↓" },
+  ];
+  const FILTER_OPTS = [
+    { key: "tutti", label: "Tutti" },
+    { key: "attivi", label: "Con presenze" },
+    { key: "zero", label: "Zero presenze" },
+  ];
+
   function viewVolontari() {
     const wrap = el("div", { class: "section glass" });
+    const nAttivi = DB.volontari.filter((v) => {
+      const ass = assegByVol(v.id);
+      return DB.festa.date.some((d) => ass.some((a) => a.giorni[d] === "P"));
+    }).length;
+    const nZero = DB.volontari.length - nAttivi;
+
     const head = el("div", { class: "head" },
       el("h2", {}, "Volontari"),
       el("span", { class: "pill" }, DB.volontari.length + " totali"),
+      nZero > 0 ? el("span", { class: "pill warn-pill" }, nZero + " senza presenze") : null,
       el("input", {
-        class: "search", placeholder: "🔎 Cerca volontario…", value: STATE.search,
+        class: "search", placeholder: "Cerca volontario…", value: STATE.search,
         oninput: (e) => { STATE.search = e.target.value; refreshVList(); },
       }),
       el("button", { class: "btn primary", onclick: () => editVolontario(null) }, "➕ Aggiungi"));
     wrap.append(head);
+
+    const toolbar = el("div", { class: "vtoolbar" },
+      el("div", { class: "vtool-group" },
+        el("span", { class: "vtool-label" }, "Ordina:"),
+        ...SORT_OPTS.map((o) => el("button", {
+          class: "btn sm" + (STATE.sort === o.key ? " vsort-active" : ""),
+          onclick: () => { STATE.sort = o.key; render(); },
+        }, o.label))),
+      el("div", { class: "vtool-group" },
+        el("span", { class: "vtool-label" }, "Filtra:"),
+        ...FILTER_OPTS.map((o) => el("button", {
+          class: "btn sm" + (STATE.vfilter === o.key ? " vsort-active" : ""),
+          onclick: () => { STATE.vfilter = o.key; render(); },
+        }, o.label))));
+    wrap.append(toolbar);
     wrap.append(el("div", { class: "vlist", id: "vlist" }));
     refreshVListInto(wrap);
     return wrap;
   }
+
   function refreshVList() { refreshVListInto(document); }
   function refreshVListInto(root) {
     const list = root.querySelector ? root.querySelector("#vlist") : $("#vlist");
     if (!list) return;
     list.innerHTML = "";
+    const total = DB.festa.date.length;
     const q = STATE.search.trim().toLowerCase();
-    const vols = DB.volontari
+
+    let vols = DB.volontari
       .filter((v) => v.nome.toLowerCase().includes(q))
-      .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+      .map((v) => {
+        const ass = assegByVol(v.id);
+        const pres = DB.festa.date.filter((d) => ass.some((a) => a.giorni[d] === "P")).length;
+        return { v, ass, pres };
+      });
+
+    if (STATE.vfilter === "attivi") vols = vols.filter((x) => x.pres > 0);
+    else if (STATE.vfilter === "zero") vols = vols.filter((x) => x.pres === 0);
+
+    const s = STATE.sort;
+    if (s === "nome-za") vols.sort((a, b) => b.v.nome.localeCompare(a.v.nome, "it"));
+    else if (s === "pres-desc") vols.sort((a, b) => b.pres - a.pres || a.v.nome.localeCompare(b.v.nome, "it"));
+    else if (s === "pres-asc") vols.sort((a, b) => a.pres - b.pres || a.v.nome.localeCompare(b.v.nome, "it"));
+    else if (s === "pos-desc") vols.sort((a, b) => b.ass.length - a.ass.length || a.v.nome.localeCompare(b.v.nome, "it"));
+    else vols.sort((a, b) => a.v.nome.localeCompare(b.v.nome, "it"));
+
     if (!vols.length) { list.append(el("div", { class: "empty-state" }, "Nessun volontario trovato.")); return; }
-    for (const v of vols) {
-      const ass = assegByVol(v.id);
-      const presenze = ass.reduce((s, a) => s + countP(a.giorni), 0);
-      const row = el("div", { class: "vrow" },
-        el("div", { class: "avatar" }, initials(v.nome)),
+
+    for (const { v, ass, pres } of vols) {
+      const zero = pres === 0;
+      const presBadge = el("span", { class: "pres-badge " + (zero ? "pres-zero" : "pres-ok") },
+        `${pres}/${total} gg`);
+      const row = el("div", { class: "vrow" + (zero ? " vrow-zero" : "") },
+        el("div", { class: "avatar" + (zero ? " avatar-zero" : "") }, initials(v.nome)),
         el("div", { class: "meta", style: "cursor:pointer", onclick: () => personDetail(v.id) },
           el("div", { class: "nm" }, v.nome),
-          el("div", { class: "tags" }, `${ass.length} postazioni · ${presenze} presenze`)),
+          el("div", { class: "tags" }, ass.length + " postaz. · ", presBadge)),
         el("div", { class: "acts" },
           el("button", { class: "btn sm", title: "Modifica", onclick: () => editVolontario(v.id) }, "✏️"),
           el("button", { class: "btn sm danger", title: "Elimina", onclick: () => removeVolontario(v.id) }, "🗑️")));
@@ -274,6 +363,7 @@
   }
 
   function editVolontario(id) {
+    if (guardReadonly()) return;
     const v = id ? volById(id) : null;
     const assigned = new Set((id ? assegByVol(id) : []).map((a) => a.postazioneId));
     const nameInput = el("input", { value: v ? v.nome : "", placeholder: "Nome e cognome" });
@@ -323,6 +413,7 @@
   }
 
   function removeVolontario(id) {
+    if (guardReadonly()) return;
     const v = volById(id);
     if (!confirm(`Eliminare "${v.nome}" e tutte le sue assegnazioni?`)) return;
     DB.volontari = DB.volontari.filter((x) => x.id !== id);
@@ -368,8 +459,28 @@
   function viewPostazioni() {
     const wrap = el("div");
     wrap.append(legend());
+
+    // toggle bar: mostra/nascondi aree
+    const toggleBar = el("div", { class: "area-toggle-bar" },
+      el("span", { class: "vtool-label" }, "Mostra:"));
+    DB.aree.forEach((a, i) => {
+      const hidden = STATE.hiddenAreas.includes(a.id);
+      toggleBar.append(el("button", {
+        class: "area-chip" + (hidden ? " area-chip-off" : ""),
+        style: "--ac:" + areaColor(a.id, i),
+        onclick: () => {
+          STATE.hiddenAreas = hidden
+            ? STATE.hiddenAreas.filter((id) => id !== a.id)
+            : [...STATE.hiddenAreas, a.id];
+          render();
+        },
+      }, a.nome));
+    });
+    wrap.append(el("div", { class: "section glass", style: "padding:10px 16px; margin-top:0" }, toggleBar));
+
     const grid = el("div", { class: "area-grid" });
     DB.aree.forEach((a, i) => {
+      if (STATE.hiddenAreas.includes(a.id)) return;
       const handle = el("span", { class: "draghandle", title: "Trascina per riordinare", draggable: "true" }, "⠿");
       const sec = el("div", { class: "section glass area-sec", "data-area": a.id, style: "--ac:" + areaColor(a.id, i) },
         el("div", { class: "head" }, handle, el("h2", {}, a.nome),
@@ -410,6 +521,9 @@
     thead.append(el("th", {}, "Tot"));
     table.append(el("thead", {}, thead));
 
+    // celle dei totali giornalieri (popolate dopo il tbody)
+    const dayTotCells = {};
+
     const tbody = el("tbody", {});
     for (const a of ass) {
       const v = volById(a.volontarioId);
@@ -420,14 +534,36 @@
           onclick: () => removeAssegnazione(a) }, "×"));
       tr.append(nameTd);
       DB.festa.date.forEach((d) => {
-        const btn = el("button", { class: "cellbtn " + a.giorni[d], title: STATO_LABEL[a.giorni[d]] }, a.giorni[d]);
+        const isConflict = a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2;
+        const btn = el("button", {
+          class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
+          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche altrove!" : ""),
+        }, a.giorni[d]);
         btn.addEventListener("click", () => {
+          if (guardReadonly()) return;
           a.giorni[d] = nextStato(a.giorni[d]);
           btn.className = "cellbtn " + a.giorni[d];
           btn.textContent = a.giorni[d];
           btn.title = STATO_LABEL[a.giorni[d]];
           totCell.textContent = countP(a.giorni);
           save();
+          // avviso conflitto
+          if (a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2) {
+            const others = DB.assegnazioni.filter(
+              (x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[d] === "P"
+            );
+            const names = others.map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ");
+            toast("⚠️ " + v.nome + " è già P a: " + names);
+            btn.classList.add("conflict");
+            btn.title += " · anche altrove!";
+          }
+          // aggiorna totale del giorno
+          const tc = dayTotCells[d];
+          if (tc) {
+            const n = ass.filter((x) => x.giorni[d] === "P").length;
+            tc.textContent = String(n);
+            tc.className = "day-tot-cell " + sogliaCls(p.id, n);
+          }
         });
         tr.append(el("td", {}, btn));
       });
@@ -436,16 +572,30 @@
       tbody.append(tr);
     }
     table.append(tbody);
+
+    // riga totali per giorno
+    const tfootRow = el("tr", {}, el("td", { class: "name day-tot-label" }, "Presenti"));
+    DB.festa.date.forEach((d) => {
+      const n = ass.filter((a) => a.giorni[d] === "P").length;
+      const td = el("td", { class: "day-tot-cell " + sogliaCls(p.id, n) }, String(n));
+      dayTotCells[d] = td;
+      tfootRow.append(td);
+    });
+    tfootRow.append(el("td", {}));
+    table.append(el("tfoot", {}, tfootRow));
+
     block.append(el("div", { class: "tablewrap" }, table));
     return block;
   }
   function removeAssegnazione(a) {
+    if (guardReadonly()) return;
     const v = volById(a.volontarioId), info = posInfo(a.postazioneId);
     if (!confirm(`Rimuovere ${v.nome} da "${info.nome}"?`)) return;
     DB.assegnazioni = DB.assegnazioni.filter((x) => x !== a);
     save(); render(); toast("Rimosso");
   }
   function assegnaModal(posId) {
+    if (guardReadonly()) return;
     const info = posInfo(posId);
     const already = new Set(assegByPos(posId).map((a) => a.volontarioId));
     const avail = DB.volontari.filter((v) => !already.has(v.id))
@@ -464,8 +614,15 @@
       if (!sel.value) { toast("Scegli un volontario"); return; }
       const giorni = {};
       for (const d of DB.festa.date) giorni[d] = "P";
+      const volId = sel.value;
       DB.assegnazioni.push({ volontarioId: sel.value, postazioneId: posId, giorni });
-      save(); closeModal(); render(); gotoPostazione(posId); toast("Assegnato");
+      save(); closeModal(); render(); gotoPostazione(posId);
+      const conflictDays = DB.festa.date.filter((d) => pCountOnDay(volId, d) >= 2).length;
+      if (conflictDays > 0) {
+        toast("⚠️ " + volById(volId).nome + " ha conflitti P in " + conflictDays + " giorn" + (conflictDays === 1 ? "o" : "i"));
+      } else {
+        toast("Assegnato");
+      }
     }
   }
 
@@ -572,14 +729,112 @@
     r.readAsText(file);
   }
 
+  /* ============ istantanee (snapshot) ============ */
+  function loadSnaps() { try { return JSON.parse(lsGet(SNAPS_KEY) || "[]"); } catch (e) { return []; } }
+  function saveSnaps(list) { try { localStorage.setItem(SNAPS_KEY, JSON.stringify(list)); } catch (e) { toast("Errore salvataggio istantanea"); } }
+
+  function snapshotModal() {
+    const snaps = loadSnaps();
+    function nowLabel() {
+      const n = new Date();
+      return n.toLocaleDateString("it") + " " + n.toLocaleTimeString("it", { hour: "2-digit", minute: "2-digit" });
+    }
+    const nameInput = el("input", { class: "snap-name-input", placeholder: "Nome istantanea…", value: nowLabel() });
+
+    function doSave() {
+      if (guardReadonly()) return;
+      const name = nameInput.value.trim() || nowLabel();
+      const list = loadSnaps();
+      list.unshift({ id: Date.now(), name, date: new Date().toISOString(), db: JSON.parse(JSON.stringify(DB)) });
+      if (list.length > 20) list.splice(20);
+      saveSnaps(list);
+      toast("Istantanea salvata");
+      closeModal(); snapshotModal();
+    }
+
+    const snapList = el("div", { class: "snap-list" });
+    if (!snaps.length) snapList.append(el("div", { class: "empty-state" }, "Nessuna istantanea salvata."));
+    for (const s of snaps) {
+      const d = new Date(s.date);
+      const dateStr = d.toLocaleDateString("it") + " " + d.toLocaleTimeString("it", { hour: "2-digit", minute: "2-digit" });
+      snapList.append(el("div", { class: "snap-row" },
+        el("div", { class: "snap-info" },
+          el("div", { class: "snap-name-lbl" }, s.name),
+          el("div", { class: "snap-date" }, dateStr + " · " + s.db.volontari.length + " volontari")),
+        el("div", { class: "snap-acts" },
+          el("button", { class: "btn sm", onclick: () => { closeModal(); viewSnapshot(s); } }, "Visualizza"),
+          el("button", { class: "btn sm primary", onclick: () => restoreSnapshot(s) }, "Ripristina"),
+          el("button", { class: "btn sm danger", onclick: () => deleteSnapshot(s.id) }, "🗑️"))));
+    }
+
+    openModal(el("div", { class: "snap-modal" },
+      el("h3", {}, "Istantanee"),
+      el("div", { class: "snap-save-row" },
+        el("label", {}, "Salva situazione attuale"),
+        el("div", { class: "row" }, nameInput,
+          el("button", { class: "btn primary", onclick: doSave }, "Salva"))),
+      snaps.length ? el("div", { class: "snap-section-label" }, snaps.length + " istantanee salvate") : null,
+      snapList,
+      el("div", { class: "row" }, el("button", { class: "btn", onclick: closeModal }, "Chiudi"))));
+  }
+
+  function viewSnapshot(snap) {
+    LIVE_DB = DB;
+    DB = normalize(JSON.parse(JSON.stringify(snap.db)));
+    STATE.readonly = true;
+    STATE.snapName = snap.name;
+    STATE.snapDate = snap.date;
+    render();
+  }
+
+  function exitSnapshot() {
+    DB = LIVE_DB;
+    LIVE_DB = null;
+    STATE.readonly = false;
+    STATE.snapName = null;
+    STATE.snapDate = null;
+    render();
+  }
+
+  function restoreSnapshot(snap) {
+    if (!confirm(`Sostituire i dati attuali con l'istantanea "${snap.name}"?\nI dati correnti verranno sovrascritti.`)) return;
+    if (STATE.readonly) { LIVE_DB = null; STATE.readonly = false; STATE.snapName = null; STATE.snapDate = null; }
+    DB = normalize(JSON.parse(JSON.stringify(snap.db)));
+    save();
+    closeModal();
+    render();
+    toast("Dati ripristinati dall'istantanea");
+  }
+
+  function deleteSnapshot(id) {
+    if (!confirm("Eliminare questa istantanea?")) return;
+    saveSnaps(loadSnaps().filter((s) => s.id !== id));
+    closeModal(); snapshotModal();
+  }
+
+  function readonlyBanner() {
+    const d = new Date(STATE.snapDate);
+    const dateStr = d.toLocaleDateString("it", { day: "numeric", month: "long" }) + " " +
+      d.toLocaleTimeString("it", { hour: "2-digit", minute: "2-digit" });
+    return el("div", { class: "readonly-banner" },
+      el("span", { class: "ro-label" }, "SOLA LETTURA"),
+      el("span", { class: "ro-name" }, STATE.snapName),
+      el("span", { class: "ro-date" }, dateStr),
+      el("div", { class: "spacer" }),
+      el("button", { class: "btn sm primary", onclick: () => { closeModal(); snapshotModal(); } }, "Gestisci"),
+      el("button", { class: "btn sm", onclick: exitSnapshot }, "Esci dall'anteprima"));
+  }
+
   /* ============ render principale ============ */
   function render() {
     $("#festaName").textContent = DB.festa.nome;
     $("#festaSub").textContent = "2–12 luglio 2026 · lun 6 escluso";
+    document.body.classList.toggle("is-readonly", STATE.readonly);
     document.querySelectorAll(".tab").forEach((t) =>
       t.classList.toggle("active", t.dataset.view === STATE.view));
     const v = $("#view");
     v.innerHTML = "";
+    if (STATE.readonly) v.append(readonlyBanner());
     if (STATE.view === "dashboard") v.append(viewDashboard());
     else if (STATE.view === "volontari") v.append(viewVolontari());
     else if (STATE.view === "postazioni") v.append(viewPostazioni());
@@ -590,9 +845,10 @@
   function wireChrome() {
     document.querySelectorAll(".tab").forEach((t) =>
       t.addEventListener("click", () => setView(t.dataset.view)));
+    $("#btnSnapshot").addEventListener("click", snapshotModal);
     $("#btnExport").addEventListener("click", exportJSON);
     $("#btnPrint").addEventListener("click", buildPrint);
-    $("#btnImport").addEventListener("click", () => $("#fileInput").click());
+    $("#btnImport").addEventListener("click", () => { if (guardReadonly()) return; $("#fileInput").click(); });
     $("#fileInput").addEventListener("change", (e) => {
       if (e.target.files[0]) importJSON(e.target.files[0]);
       e.target.value = "";
