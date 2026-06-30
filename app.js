@@ -112,8 +112,8 @@
     return "v-" + s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
-  const AREA_COLORS = { "a-pulizia": "#22d3ee", "a-cucina": "#f472b6", "a-clienti": "#a78bfa" };
-  const AREA_FALLBACK = ["#22d3ee", "#f472b6", "#a78bfa", "#34d399", "#f59e0b", "#60a5fa"];
+  const AREA_COLORS = { "a-pulizia": "#6aa6b3", "a-cucina": "#bf8499", "a-clienti": "#8b92cf" };
+  const AREA_FALLBACK = ["#6aa6b3", "#bf8499", "#8b92cf", "#7fa37e", "#c0a36a", "#7e8cc9"];
   function areaColor(areaId, i) { return AREA_COLORS[areaId] || AREA_FALLBACK[i % AREA_FALLBACK.length]; }
 
   /* ============ navigazione ============ */
@@ -129,6 +129,46 @@
         setTimeout(() => node.classList.remove("flash"), 1600);
       }
     }, 60);
+  }
+
+  /* ============ drag & drop riordino sezioni ============ */
+  let dragAreaId = null;
+  function attachDnD(sec, handle, areaId) {
+    handle.addEventListener("dragstart", (e) => {
+      dragAreaId = areaId;
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", areaId); } catch (_) {}
+      }
+      sec.classList.add("dragging");
+    });
+    handle.addEventListener("dragend", () => {
+      dragAreaId = null;
+      document.querySelectorAll(".area-sec").forEach((s) => s.classList.remove("dragging", "dragover"));
+    });
+    sec.addEventListener("dragover", (e) => {
+      if (dragAreaId && dragAreaId !== areaId) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        sec.classList.add("dragover");
+      }
+    });
+    sec.addEventListener("dragleave", () => sec.classList.remove("dragover"));
+    sec.addEventListener("drop", (e) => {
+      e.preventDefault();
+      sec.classList.remove("dragover");
+      reorderAree(dragAreaId, areaId);
+    });
+  }
+  function reorderAree(fromId, toId) {
+    if (!fromId || fromId === toId) return;
+    const fromIdx = DB.aree.findIndex((a) => a.id === fromId);
+    const toIdx = DB.aree.findIndex((a) => a.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = DB.aree.splice(fromIdx, 1);
+    const newToIdx = DB.aree.findIndex((a) => a.id === toId);
+    DB.aree.splice(newToIdx + (fromIdx < toIdx ? 1 : 0), 0, moved);
+    save(); render(); toast("Sezioni riordinate");
   }
 
   /* ============ viste ============ */
@@ -328,13 +368,17 @@
   function viewPostazioni() {
     const wrap = el("div");
     wrap.append(legend());
+    const grid = el("div", { class: "area-grid" });
     DB.aree.forEach((a, i) => {
-      const sec = el("div", { class: "section glass area-sec", style: "--ac:" + areaColor(a.id, i) },
-        el("div", { class: "head" }, el("h2", {}, a.nome),
+      const handle = el("span", { class: "draghandle", title: "Trascina per riordinare", draggable: "true" }, "⠿");
+      const sec = el("div", { class: "section glass area-sec", "data-area": a.id, style: "--ac:" + areaColor(a.id, i) },
+        el("div", { class: "head" }, handle, el("h2", {}, a.nome),
           el("span", { class: "pill" }, a.postazioni.length + " postazioni")));
       for (const p of a.postazioni) sec.append(postazioneBlock(p));
-      wrap.append(sec);
+      attachDnD(sec, handle, a.id);
+      grid.append(sec);
     });
+    wrap.append(grid);
     return wrap;
   }
   function legend() {

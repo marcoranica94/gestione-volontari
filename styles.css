@@ -4,16 +4,16 @@
    L1 sfondo  ·  L2 pannello sezione (vetro)  ·  L3 sotto-card (film)
    ========================================================= */
 :root {
-  --bg-0: #0a0e24;
-  --bg-1: #271c52;
-  --bg-2: #0c1030;
+  --bg-0: #0d1017;
+  --bg-1: #141925;
+  --bg-2: #0b0e15;
 
-  --text: #eef1ff;
-  --text-dim: rgba(238, 241, 255, 0.62);
-  --text-faint: rgba(238, 241, 255, 0.40);
+  --text: #e8ebf2;
+  --text-dim: rgba(232, 235, 242, 0.58);
+  --text-faint: rgba(232, 235, 242, 0.36);
 
-  --accent: #8aa2ff;
-  --accent-2: #ff86c8;
+  --accent: #7e8cc9;
+  --accent-2: #9b8fc4;
 
   /* livello 2 — pannelli sezione (vetro vero, backdrop-filter) */
   --s2-bg: rgba(255, 255, 255, 0.072);
@@ -54,16 +54,13 @@ body {
   overflow-x: hidden;
 }
 
-/* sfondo ricco: tre sorgenti di colore dietro al vetro */
+/* sfondo sobrio: scuro neutro freddo, un solo bagliore tenue in alto */
 body::before {
   content: "";
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(60% 55% at 12% 8%,  #6f4cff66 0%, transparent 60%),
-    radial-gradient(55% 50% at 92% 18%, #ff5fa255 0%, transparent 58%),
-    radial-gradient(70% 60% at 78% 96%, #20b6c955 0%, transparent 60%),
-    radial-gradient(60% 60% at 25% 92%, #7b53ff44 0%, transparent 60%),
-    linear-gradient(150deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
+    radial-gradient(80% 50% at 50% -10%, rgba(126, 140, 201, 0.10) 0%, transparent 60%),
+    linear-gradient(170deg, var(--bg-1) 0%, var(--bg-0) 55%, var(--bg-2) 100%);
 }
 
 .app { position: relative; z-index: 1; max-width: 1220px; margin: 0 auto; padding: 30px 22px 90px; }
@@ -129,9 +126,27 @@ body::before {
 
 /* pallino colore area accanto al titolo */
 .area-sec > .head h2::before {
-  content: ""; width: 12px; height: 12px; border-radius: 50%;
-  background: var(--ac); box-shadow: 0 0 14px var(--ac); flex: 0 0 auto;
+  content: ""; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--ac); flex: 0 0 auto;
 }
+
+/* ---------- layout a colonne + drag&drop ---------- */
+.area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 18px;
+  align-items: start;
+  margin-top: 20px;
+}
+.area-grid .section { margin-top: 0; }
+.draghandle {
+  cursor: grab; color: var(--text-faint); font-size: 1.1rem; line-height: 1;
+  padding: 2px 4px; border-radius: 6px; user-select: none; flex: 0 0 auto;
+}
+.draghandle:hover { color: var(--text-dim); background: rgba(255, 255, 255, 0.06); }
+.draghandle:active { cursor: grabbing; }
+.area-sec.dragging { opacity: 0.45; }
+.area-sec.dragover { outline: 2px dashed var(--ac); outline-offset: 3px; }
 
 /* ---------- cards / stat ---------- */
 .grid { display: grid; gap: 16px; }
