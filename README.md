@@ -32,9 +32,12 @@ reale contro accessi casuali, non un sistema multi-utente con account.
 
 ## Come salvare le modifiche
 
-Le modifiche fatte nell'app si salvano nel **browser locale** (localStorage):
-sono tue, su quel dispositivo, e **non si sincronizzano** automaticamente tra
-persone. Per condividere una versione aggiornata:
+Le modifiche fatte nell'app si salvano nel **browser locale** (localStorage) e,
+se Supabase è configurato, anche nel **cloud** come blob cifrato. Il sito resta
+statico su GitHub Pages, ma i dati aggiornati non dipendono più dal push del
+repo.
+
+Export/import restano disponibili come backup:
 
 1. nell'app premi **💾 Esporta** → ottieni `festa-rocca-2026.json`;
 2. (opzionale, per aggiornare la baseline pubblica) rigenera i dati cifrati:
@@ -43,6 +46,42 @@ persone. Per condividere una versione aggiornata:
    node build-seed.mjs 'LA_TUA_PASSWORD'   # rigenera seed.enc.js
    git commit -am "aggiorna dati" && git push
    ```
+
+## Supabase
+
+La chiave publishable/anon può stare nel frontend. Non inserire mai una
+`service_role_key` nel sito.
+
+Nel progetto Supabase crea la tabella e le policy:
+
+```sql
+create table if not exists public.app_state (
+  id text primary key,
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.app_state enable row level security;
+
+create policy "read app state"
+on public.app_state
+for select
+using (id = 'main');
+
+create policy "insert app state"
+on public.app_state
+for insert
+with check (id = 'main');
+
+create policy "update app state"
+on public.app_state
+for update
+using (id = 'main')
+with check (id = 'main');
+```
+
+I dati salvati in `payload` sono cifrati lato browser con la password dell'app.
+Chi ha accesso al database vede solo `salt`, `iv` e `ct`.
 
 ## Rigenerare i dati cifrati
 

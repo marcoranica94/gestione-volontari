@@ -52,19 +52,45 @@
 
   /* ============ crypto / login ============ */
   const b64dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const b64enc = (buf) => {
+    const bytes = new Uint8Array(buf);
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(out);
+  };
+
+  async function decryptBlob(password, E) {
+    const rawKey = new TextEncoder().encode(password);
+    const baseKey = await crypto.subtle.importKey("raw", rawKey, "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: b64dec(E.salt), iterations: 200000, hash: "SHA-256" },
+      baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+    );
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64dec(E.iv) }, key, b64dec(E.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+
+  async function encryptBlob(password, data) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const rawKey = new TextEncoder().encode(password);
+    const plaintext = new TextEncoder().encode(JSON.stringify(data));
+    const baseKey = await crypto.subtle.importKey("raw", rawKey, "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+      baseKey, { name: "AES-GCM", length: 256 }, false, ["encrypt"]
+    );
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    return { v: 1, salt: b64enc(salt), iv: b64enc(iv), ct: b64enc(ct) };
+  }
 
   async function decryptSeed(password) {
     const blobs = Array.isArray(window.SEED_ENC) ? window.SEED_ENC : [window.SEED_ENC];
-    const rawKey = new TextEncoder().encode(password);
     for (const E of blobs) {
       try {
-        const baseKey = await crypto.subtle.importKey("raw", rawKey, "PBKDF2", false, ["deriveKey"]);
-        const key = await crypto.subtle.deriveKey(
-          { name: "PBKDF2", salt: b64dec(E.salt), iterations: 200000, hash: "SHA-256" },
-          baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
-        );
-        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64dec(E.iv) }, key, b64dec(E.ct));
-        return JSON.parse(new TextDecoder().decode(pt));
+        return await decryptBlob(password, E);
       } catch (_) { /* prova il prossimo blob */ }
     }
     throw new Error("password errata");
@@ -74,8 +100,17 @@
   const LS_KEY = "gv-festa-rocca-2026";
   const SNAPS_KEY = "gv-snapshots-rocca-2026";
   const SESS_KEY = "gv-unlocked";
+  const SUPABASE_URL = "https://ypawiaaqzwxzxdvcdyzg.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_1IAOoGvEuc1b45XpAP1_Nw_qY3Kqv4_";
+  const CLOUD_TABLE = "app_state";
+  const CLOUD_ROW_ID = "main";
+  const CLOUD_ENABLED = Boolean(SUPABASE_URL && SUPABASE_KEY);
   let DB = null;
   let LIVE_DB = null; // DB salvato quando si visualizza un'istantanea
+  let CLOUD_PASSWORD = null;
+  let cloudSaveTimer = null;
+  let cloudSaveChain = Promise.resolve();
+  let cloudLastError = "";
   const STATE = { view: "dashboard", search: "", sort: "nome-az", vfilter: "tutti", day: 0,
     readonly: false, snapName: null, snapDate: null, hiddenAreas: [] };
   const STATI = ["P", "A", "L"];
@@ -84,6 +119,7 @@
   function save() {
     if (STATE.readonly) return; // mai scrivere dati di un'istantanea nel localStorage
     try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { /* storage non disponibile */ }
+    scheduleCloudSave();
   }
   function guardReadonly() {
     if (STATE.readonly) { toast("Sola lettura — esci dall'anteprima per modificare"); return true; }
@@ -91,6 +127,72 @@
   }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+
+  function supabaseHeaders(extra) {
+    return {
+      apikey: SUPABASE_KEY,
+      Authorization: "Bearer " + SUPABASE_KEY,
+      "Content-Type": "application/json",
+      ...extra,
+    };
+  }
+  async function supabaseFetch(path, options) {
+    const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+      ...options,
+      headers: supabaseHeaders(options?.headers),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error("Supabase " + res.status + (text ? ": " + text : ""));
+    }
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
+  async function loadCloudDB(password) {
+    if (!CLOUD_ENABLED) return null;
+    const rows = await supabaseFetch(
+      CLOUD_TABLE + "?id=eq." + encodeURIComponent(CLOUD_ROW_ID) + "&select=payload,updated_at&limit=1",
+      { method: "GET" }
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row?.payload) return null;
+    return normalize(await decryptBlob(password, row.payload));
+  }
+  function setCloudStatus(text, cls) {
+    const node = document.getElementById("cloudStatus");
+    if (!node) return;
+    node.textContent = text;
+    node.className = "cloud-status" + (cls ? " " + cls : "");
+  }
+  function scheduleCloudSave() {
+    if (!CLOUD_ENABLED || !CLOUD_PASSWORD || STATE.readonly || !DB) return;
+    clearTimeout(cloudSaveTimer);
+    setCloudStatus("Cloud: modifiche…", "cloud-pending");
+    cloudSaveTimer = setTimeout(() => {
+      cloudSaveChain = cloudSaveChain.then(saveCloudDB).catch((e) => {
+        cloudLastError = e.message || String(e);
+        console.error(e);
+        setCloudStatus("Cloud: errore", "cloud-error");
+        toast("Errore salvataggio cloud");
+      });
+    }, 650);
+  }
+  async function saveCloudDB() {
+    setCloudStatus("Cloud: salvo…", "cloud-pending");
+    const payload = await encryptBlob(CLOUD_PASSWORD, DB);
+    await supabaseFetch(CLOUD_TABLE, {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        id: CLOUD_ROW_ID,
+        payload,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    cloudLastError = "";
+    setCloudStatus("Cloud: salvato", "cloud-ok");
+  }
 
   function normalize(db) {
     for (const a of db.assegnazioni) {
@@ -1065,20 +1167,61 @@
       if (e.target.files[0]) importJSON(e.target.files[0]);
       e.target.value = "";
     });
+    const cloud = el("button", {
+      class: "cloud-status cloud-idle",
+      id: "cloudStatus",
+      title: "Salvataggio cloud Supabase",
+      onclick: () => {
+        if (!CLOUD_ENABLED) return toast("Cloud non configurato");
+        if (!CLOUD_PASSWORD) return toast("Sblocca con password per salvare sul cloud");
+        saveCloudDB().catch((e) => {
+          cloudLastError = e.message || String(e);
+          console.error(e);
+          setCloudStatus("Cloud: errore", "cloud-error");
+          toast("Errore cloud: " + cloudLastError.slice(0, 80));
+        });
+      },
+    }, CLOUD_ENABLED ? "Cloud: pronto" : "Cloud: off");
+    $(".topbar").append(cloud);
     // bottone logout
     const lock = el("button", { class: "btn", title: "Blocca",
-      onclick: () => { sessionStorage.removeItem(SESS_KEY); location.reload(); } }, "🔒");
+      onclick: () => { CLOUD_PASSWORD = null; sessionStorage.removeItem(SESS_KEY); location.reload(); } }, "🔒");
     $(".topbar").append(lock);
   }
 
-  function startApp() {
+  function startApp(initialDB) {
     const saved = lsGet(LS_KEY);
-    DB = saved ? normalize(JSON.parse(saved)) : normalize(window.__SEED_DECRYPTED);
+    DB = initialDB ? normalize(initialDB) : saved ? normalize(JSON.parse(saved)) : normalize(window.__SEED_DECRYPTED);
     if (!saved) save();
     delete window.__SEED_DECRYPTED;
     document.querySelector(".app").style.display = "";
     wireChrome();
     render();
+    if (CLOUD_ENABLED && CLOUD_PASSWORD && !STATE.readonly) scheduleCloudSave();
+  }
+  async function unlockData(password) {
+    CLOUD_PASSWORD = password;
+    if (CLOUD_ENABLED) {
+      setCloudStatus("Cloud: carico…", "cloud-pending");
+      try {
+        const cloudDB = await loadCloudDB(password);
+        if (cloudDB) {
+          try { localStorage.setItem(LS_KEY, JSON.stringify(cloudDB)); } catch (e) { /* storage non disponibile */ }
+          setCloudStatus("Cloud: caricato", "cloud-ok");
+          return cloudDB;
+        }
+        setCloudStatus("Cloud: vuoto", "cloud-pending");
+      } catch (e) {
+        cloudLastError = e.message || String(e);
+        console.error(e);
+        setCloudStatus("Cloud: errore", "cloud-error");
+        toast("Cloud non disponibile, uso i dati locali");
+      }
+    }
+    const saved = lsGet(LS_KEY);
+    const seedDB = await decryptSeed(password);
+    if (saved) return normalize(JSON.parse(saved));
+    return seedDB;
   }
 
   function showLogin(errMsg) {
@@ -1101,11 +1244,10 @@
       const btn = document.getElementById("loginBtn");
       btn.disabled = true; btn.textContent = "Sblocco…";
       try {
-        const seed = await decryptSeed(pw.value);
-        window.__SEED_DECRYPTED = seed;
+        const db = await unlockData(pw.value);
         sessionStorage.setItem(SESS_KEY, "1");
         root.remove();
-        startApp();
+        startApp(db);
       } catch (e) {
         btn.disabled = false; btn.textContent = "Entra";
         showLogin("Password errata. Riprova.");
@@ -1127,7 +1269,7 @@
       return;
     }
     if (!window.SEED_ENC) { document.body.innerHTML = "<p style='padding:40px'>Dati cifrati non trovati (seed.enc.js).</p>"; return; }
-    if (ssGet(SESS_KEY) && lsGet(LS_KEY)) {
+    if (!CLOUD_ENABLED && ssGet(SESS_KEY) && lsGet(LS_KEY)) {
       // già sbloccato in questa sessione e dati locali presenti
       startApp();
     } else {

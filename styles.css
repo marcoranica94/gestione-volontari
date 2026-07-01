@@ -92,6 +92,15 @@ body {
 .btn.danger { color: #b3344a; border-color: rgba(210, 68, 90, .35); }
 .btn.danger:hover { background: rgba(210, 68, 90, .08); }
 .btn.sm { padding: 5px 10px; font-size: .8rem; }
+.cloud-status {
+  border: 1px solid var(--line-strong); background: var(--panel-solid); color: var(--text-dim);
+  padding: 7px 10px; border-radius: var(--radius-3); cursor: pointer;
+  font-size: .76rem; font-weight: 700; white-space: nowrap;
+}
+.cloud-status:hover { background: #f3f5f9; }
+.cloud-ok { color: #1a7f50; border-color: rgba(31, 157, 99, .35); background: #e2f5ec; }
+.cloud-pending { color: #8a6200; border-color: rgba(214, 138, 23, .4); background: #fef3cc; }
+.cloud-error { color: #b3344a; border-color: rgba(210, 68, 90, .35); background: #fde0e5; }
 
 /* ---------- sezioni (L2) ---------- */
 .section { padding: 18px 20px; margin-top: 16px; }
@@ -471,6 +480,10 @@ body.is-readonly .draghandle { cursor: default; opacity: .2; }
     flex: 1 1 calc(50% - 4px); justify-content: center;
     min-height: 40px; padding: 8px 9px; font-size: .8rem;
   }
+  .cloud-status {
+    flex: 1 1 calc(50% - 4px); min-height: 40px; padding: 8px 9px;
+    text-align: center; font-size: .74rem;
+  }
 
   .tabs { gap: 5px; padding: 5px; margin-bottom: 10px; }
   .tab {
@@ -548,6 +561,7 @@ body.is-readonly .draghandle { cursor: default; opacity: .2; }
 
 @media (max-width: 380px) {
   .topbar > .btn { flex-basis: 100%; }
+  .cloud-status { flex-basis: 100%; }
   .area-chip { flex-basis: 100%; }
   .shift-day-grid,
   .mobile-day-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); }
