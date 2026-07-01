@@ -107,7 +107,6 @@
   const CLOUD_ENABLED = Boolean(SUPABASE_URL && SUPABASE_KEY);
   let DB = null;
   let LIVE_DB = null; // DB salvato quando si visualizza un'istantanea
-  let CLOUD_PASSWORD = null;
   let cloudSaveTimer = null;
   let cloudSaveChain = Promise.resolve();
   let cloudLastError = "";
@@ -149,7 +148,7 @@
     const text = await res.text();
     return text ? JSON.parse(text) : null;
   }
-  async function loadCloudDB(password) {
+  async function loadCloudDB() {
     if (!CLOUD_ENABLED) return null;
     const rows = await supabaseFetch(
       CLOUD_TABLE + "?id=eq." + encodeURIComponent(CLOUD_ROW_ID) + "&select=payload,updated_at&limit=1",
@@ -157,7 +156,9 @@
     );
     const row = Array.isArray(rows) ? rows[0] : null;
     if (!row?.payload) return null;
-    return normalize(await decryptBlob(password, row.payload));
+    if (row.payload.data) return normalize(row.payload.data);
+    if (row.payload.festa && row.payload.volontari && row.payload.aree) return normalize(row.payload);
+    throw new Error("Dati cloud ancora cifrati: importa un export JSON per inizializzare il nuovo formato.");
   }
   function setCloudStatus(text, cls) {
     const node = document.getElementById("cloudStatus");
@@ -166,7 +167,7 @@
     node.className = "cloud-status" + (cls ? " " + cls : "");
   }
   function scheduleCloudSave() {
-    if (!CLOUD_ENABLED || !CLOUD_PASSWORD || STATE.readonly || !DB) return;
+    if (!CLOUD_ENABLED || STATE.readonly || !DB) return;
     clearTimeout(cloudSaveTimer);
     setCloudStatus("Cloud: modifiche…", "cloud-pending");
     cloudSaveTimer = setTimeout(() => {
@@ -180,13 +181,12 @@
   }
   async function saveCloudDB() {
     setCloudStatus("Cloud: salvo…", "cloud-pending");
-    const payload = await encryptBlob(CLOUD_PASSWORD, DB);
     await supabaseFetch(CLOUD_TABLE, {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({
         id: CLOUD_ROW_ID,
-        payload,
+        payload: { v: 2, data: DB },
         updated_at: new Date().toISOString(),
       }),
     });
@@ -1173,7 +1173,6 @@
       title: "Salvataggio cloud Supabase",
       onclick: () => {
         if (!CLOUD_ENABLED) return toast("Cloud non configurato");
-        if (!CLOUD_PASSWORD) return toast("Sblocca con password per salvare sul cloud");
         saveCloudDB().catch((e) => {
           cloudLastError = e.message || String(e);
           console.error(e);
@@ -1185,7 +1184,7 @@
     $(".topbar").append(cloud);
     // bottone logout
     const lock = el("button", { class: "btn", title: "Blocca",
-      onclick: () => { CLOUD_PASSWORD = null; sessionStorage.removeItem(SESS_KEY); location.reload(); } }, "🔒");
+      onclick: () => { sessionStorage.removeItem(SESS_KEY); location.reload(); } }, "🔄");
     $(".topbar").append(lock);
   }
 
@@ -1197,14 +1196,13 @@
     document.querySelector(".app").style.display = "";
     wireChrome();
     render();
-    if (CLOUD_ENABLED && CLOUD_PASSWORD && !STATE.readonly) scheduleCloudSave();
+    if (CLOUD_ENABLED && !STATE.readonly) scheduleCloudSave();
   }
-  async function unlockData(password) {
-    CLOUD_PASSWORD = password;
+  async function loadInitialData() {
     if (CLOUD_ENABLED) {
       setCloudStatus("Cloud: carico…", "cloud-pending");
       try {
-        const cloudDB = await loadCloudDB(password);
+        const cloudDB = await loadCloudDB();
         if (cloudDB) {
           try { localStorage.setItem(LS_KEY, JSON.stringify(cloudDB)); } catch (e) { /* storage non disponibile */ }
           setCloudStatus("Cloud: caricato", "cloud-ok");
@@ -1219,46 +1217,12 @@
       }
     }
     const saved = lsGet(LS_KEY);
-    const seedDB = await decryptSeed(password);
     if (saved) return normalize(JSON.parse(saved));
-    return seedDB;
-  }
-
-  function showLogin(errMsg) {
-    const app = document.querySelector(".app");
-    app.style.display = "none";
-    let root = document.getElementById("loginRoot");
-    if (!root) { root = el("div", { id: "loginRoot" }); document.body.append(root); }
-    const pw = el("input", { type: "password", placeholder: "Password", autofocus: true });
-    const box = el("div", { class: "login glass" },
-      el("div", { class: "login-emoji" }, "🎪🔒"),
-      el("h2", {}, "Festa in Rocca 2026"),
-      el("p", { class: "sub" }, "Inserisci la password per accedere ai dati."),
-      el("div", { class: "field" }, pw),
-      errMsg ? el("div", { class: "login-err" }, errMsg) : null,
-      el("button", { class: "btn primary", id: "loginBtn" }, "Entra"));
-    root.innerHTML = "";
-    root.append(box);
-    pw.focus();
-    const submit = async () => {
-      const btn = document.getElementById("loginBtn");
-      btn.disabled = true; btn.textContent = "Sblocco…";
-      try {
-        const db = await unlockData(pw.value);
-        sessionStorage.setItem(SESS_KEY, "1");
-        root.remove();
-        startApp(db);
-      } catch (e) {
-        btn.disabled = false; btn.textContent = "Entra";
-        showLogin("Password errata. Riprova.");
-      }
-    };
-    pw.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-    box.querySelector("#loginBtn").addEventListener("click", submit);
+    throw new Error("Nessun dato disponibile. Importa un export JSON o salva da un browser che contiene gia' i dati locali.");
   }
 
   /* ============ boot ============ */
-  function boot() {
+  async function boot() {
     // anteprima/demo: dati iniettati direttamente, niente login
     if (window.GV_BOOTSTRAP) {
       DB = normalize(window.GV_BOOTSTRAP);
@@ -1268,12 +1232,14 @@
       render();
       return;
     }
-    if (!window.SEED_ENC) { document.body.innerHTML = "<p style='padding:40px'>Dati cifrati non trovati (seed.enc.js).</p>"; return; }
-    if (!CLOUD_ENABLED && ssGet(SESS_KEY) && lsGet(LS_KEY)) {
-      // già sbloccato in questa sessione e dati locali presenti
-      startApp();
-    } else {
-      showLogin();
+    try {
+      const db = await loadInitialData();
+      sessionStorage.setItem(SESS_KEY, "1");
+      startApp(db);
+    } catch (e) {
+      document.body.innerHTML = "<div style='padding:28px;font-family:Segoe UI,system-ui,sans-serif;max-width:680px'><h2>Dati non disponibili</h2><p>" +
+        (e.message || "Impossibile caricare i dati.") +
+        "</p><p>Apri l'app dal browser dove avevi gia' modificato i dati, oppure usa Importa dopo aver caricato un export JSON.</p></div>";
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

@@ -14,28 +14,26 @@ Funziona aprendo `index.html` nel browser oppure online su GitHub Pages.
   volontari × 10 giorni. Clic su una cella per ciclare **P → A → L**:
   - 🟢 **P** = Presente · 🔴 **A** = Assente · 🟡 **L** = Altra locazione
 - **Per giorno**: scegli il giorno e vedi chi è presente in ogni postazione.
-- **Stampa A5**: 3 fogli (una sezione per foglio), orizzontale, da appendere.
+- **Stampa A5**: 2 pagine A5 orizzontali con colori di area e stato.
 - **Importa / Esporta** i dati in JSON.
 
-## 🔒 Password e privacy (importante)
+## Privacy
 
 GitHub Pages serve **solo file statici**: non esistono "variabili segrete" lato
-server. Per questo i dati **non** sono in chiaro nel repo: sono **cifrati con
-AES-256** (`seed.enc.js`) e si sbloccano con la password all'apertura. Senza
-password il file dei dati è illeggibile, anche scaricandolo direttamente.
+server. Il sito non richiede piu' password all'apertura.
 
 > I file in chiaro (`data.plain.json`, `seed.js`, `Turni.xlsx`) sono in
 > `.gitignore` e **non vengono pubblicati**. Restano solo sul tuo PC.
 
-⚠️ Nota onesta: chi conosce la password può vedere i dati. È una protezione
-reale contro accessi casuali, non un sistema multi-utente con account.
+⚠️ Nota onesta: i dati salvati su Supabase sono leggibili da chi ha accesso al
+progetto Supabase. GitHub Pages resta statico, ma Supabase diventa il database
+centrale.
 
 ## Come salvare le modifiche
 
 Le modifiche fatte nell'app si salvano nel **browser locale** (localStorage) e,
-se Supabase è configurato, anche nel **cloud** come blob cifrato. Il sito resta
-statico su GitHub Pages, ma i dati aggiornati non dipendono più dal push del
-repo.
+se Supabase è configurato, anche nel **cloud**. Il sito resta statico su GitHub
+Pages, ma i dati aggiornati non dipendono più dal push del repo.
 
 Export/import restano disponibili come backup:
 
@@ -80,8 +78,8 @@ using (id = 'main')
 with check (id = 'main');
 ```
 
-I dati salvati in `payload` sono cifrati lato browser con la password dell'app.
-Chi ha accesso al database vede solo `salt`, `iv` e `ct`.
+I dati salvati in `payload` sono JSON leggibile. Chi ha accesso al progetto
+Supabase può vedere i volontari e le assegnazioni.
 
 ## Rigenerare i dati cifrati
 
