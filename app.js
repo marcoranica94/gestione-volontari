@@ -195,7 +195,15 @@
   }
 
   function normalize(db) {
+    for (const area of db.aree || []) {
+      for (const p of area.postazioni || []) {
+        if ((p.nome || "").trim().toLowerCase() === "consegna patatine") {
+          p.nome = "Consegna patatine e dolci";
+        }
+      }
+    }
     for (const a of db.assegnazioni) {
+      a.validato = a.validato === true;
       for (const d of db.festa.date) {
         let s = (a.giorni[d] || "A").toString().toUpperCase();
         a.giorni[d] = STATI.includes(s) ? s : "A";
@@ -220,6 +228,22 @@
   function nextStato(s) { return s === "P" ? "A" : s === "A" ? "L" : "P"; }
   function pCountOnDay(volId, day) {
     return DB.assegnazioni.filter((a) => a.volontarioId === volId && a.giorni[day] === "P").length;
+  }
+  function statoTitle(ass, day) {
+    const stato = ass.giorni[day];
+    if (stato === "L") {
+      const altre = DB.assegnazioni
+        .filter((x) => x !== ass && x.volontarioId === ass.volontarioId && x.giorni[day] === "P")
+        .map((x) => posInfo(x.postazioneId)?.nome || "?");
+      return STATO_LABEL.L + (altre.length ? " · a: " + altre.join(", ") : " · postazione non indicata");
+    }
+    if (stato === "P" && pCountOnDay(ass.volontarioId, day) >= 2) {
+      const altre = DB.assegnazioni
+        .filter((x) => x !== ass && x.volontarioId === ass.volontarioId && x.giorni[day] === "P")
+        .map((x) => posInfo(x.postazioneId)?.nome || "?");
+      return STATO_LABEL.P + " · anche a: " + altre.join(", ");
+    }
+    return STATO_LABEL[stato];
   }
   function initials(nome) {
     const w = nome.trim().split(/\s+/);
@@ -590,7 +614,7 @@
         if (!DB.assegnazioni.some((a) => a.volontarioId === vol.id && a.postazioneId === posId)) {
           const giorni = {};
           for (const d of DB.festa.date) giorni[d] = "P";
-          DB.assegnazioni.push({ volontarioId: vol.id, postazioneId: posId, giorni });
+          DB.assegnazioni.push({ volontarioId: vol.id, postazioneId: posId, giorni, validato: false });
         }
       }
       save(); closeModal(); render(); toast(id ? "Volontario aggiornato" : "Volontario aggiunto");
@@ -626,7 +650,11 @@
             (info ? info.nome : "?")));
         });
       } else if (altrove.length) {
-        slot.append(el("span", { class: "chip", style: "color:var(--l)" }, "altra locazione"));
+        const names = altrove.flatMap((a) => DB.assegnazioni
+          .filter((x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[d] === "P")
+          .map((x) => posInfo(x.postazioneId)?.nome || "?"));
+        slot.append(el("span", { class: "chip", style: "color:var(--l)" },
+          names.length ? "altra locazione: " + names.join(", ") : "altra locazione"));
       } else {
         slot.append(el("span", { class: "chip empty" }, "—"));
       }
@@ -718,8 +746,42 @@
     for (const a of ass) {
       const v = volById(a.volontarioId);
       const tr = el("tr", {});
+      const nameSpan = el("span", {
+        class: "vol-name" + (a.validato ? " vol-validated" : ""),
+        style: "cursor:pointer",
+        onclick: () => personDetail(v.id),
+      }, v.nome);
+      const mobileName = el("button", {
+        class: "shift-name" + (a.validato ? " vol-validated" : ""),
+        onclick: () => personDetail(v.id),
+      }, v.nome);
+      const desktopValidBtn = el("button", {
+        class: "validbtn" + (a.validato ? " validbtn-on" : ""),
+        title: a.validato ? "Validato" : "Segna come validato",
+      }, "✓");
+      const mobileValidBtn = el("button", {
+        class: "validbtn" + (a.validato ? " validbtn-on" : ""),
+        title: a.validato ? "Validato" : "Segna come validato",
+      }, "✓");
+      const updateValidation = () => {
+        const isOn = a.validato === true;
+        [nameSpan, mobileName].forEach((node) => node.classList.toggle("vol-validated", isOn));
+        [desktopValidBtn, mobileValidBtn].forEach((btn) => {
+          btn.classList.toggle("validbtn-on", isOn);
+          btn.title = isOn ? "Validato" : "Segna come validato";
+        });
+      };
+      const toggleValidation = () => {
+        if (guardReadonly()) return;
+        a.validato = !a.validato;
+        updateValidation();
+        save();
+        toast(a.validato ? v.nome + " validato" : v.nome + " da validare");
+      };
+      desktopValidBtn.addEventListener("click", toggleValidation);
+      mobileValidBtn.addEventListener("click", toggleValidation);
       const nameTd = el("td", { class: "name" },
-        el("span", { style: "cursor:pointer", onclick: () => personDetail(v.id) }, v.nome),
+        el("span", { class: "name-line" }, nameSpan, desktopValidBtn),
         el("button", { class: "rmx", title: "Rimuovi da questa postazione",
           onclick: () => removeAssegnazione(a) }, "×"));
       tr.append(nameTd);
@@ -733,7 +795,7 @@
         btns.forEach((btn) => {
           btn.className = "cellbtn " + a.giorni[day];
           btn.textContent = a.giorni[day];
-          btn.title = STATO_LABEL[a.giorni[day]];
+          btn.title = statoTitle(a, day);
         });
         const total = countP(a.giorni);
         totCell.textContent = total;
@@ -764,18 +826,15 @@
 
       DB.festa.date.forEach((d) => {
         const isConflict = a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2;
-        const conflictNames = isConflict ? DB.assegnazioni.filter(
-          (x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[d] === "P"
-        ).map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ") : null;
         const btn = el("button", {
           class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
-          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche a: " + conflictNames : ""),
+          title: statoTitle(a, d),
         }, a.giorni[d]);
         tr.append(el("td", {}, btn));
 
         const mobileBtn = el("button", {
           class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
-          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche a: " + conflictNames : ""),
+          title: statoTitle(a, d),
         }, a.giorni[d]);
         const linkedButtons = [btn, mobileBtn];
         btn.addEventListener("click", () => updateCells(d, linkedButtons, totCell, mobileTotCell));
@@ -790,8 +849,9 @@
 
       mobileCards.append(el("div", { class: "shift-card" },
         el("div", { class: "shift-card-head" },
-          el("button", { class: "shift-name", onclick: () => personDetail(v.id) }, v.nome),
+          mobileName,
           mobileTotCell,
+          mobileValidBtn,
           el("button", { class: "rmx", title: "Rimuovi da questa postazione",
             onclick: () => removeAssegnazione(a) }, "×")),
         mobileDays));
@@ -847,7 +907,7 @@
       const giorni = {};
       for (const d of DB.festa.date) giorni[d] = "P";
       const volId = sel.value;
-      DB.assegnazioni.push({ volontarioId: sel.value, postazioneId: posId, giorni });
+      DB.assegnazioni.push({ volontarioId: sel.value, postazioneId: posId, giorni, validato: false });
       save(); closeModal(); render(); gotoPostazione(posId);
       const conflictDays = DB.festa.date.filter((d) => pCountOnDay(volId, d) >= 2).length;
       if (conflictDays > 0) {
