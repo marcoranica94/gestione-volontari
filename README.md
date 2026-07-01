@@ -7,6 +7,7 @@ Funziona aprendo `index.html` nel browser oppure online su GitHub Pages.
 
 ## Cosa fa
 
+
 - **Panoramica**: numeri chiave + copertura per giorno + riepilogo per area.
 - **Volontari**: cerca, aggiungi, modifica, elimina. Clic su un nome → dettaglio
   con *dov'è ogni giorno* (clic sulla postazione per saltarci).
