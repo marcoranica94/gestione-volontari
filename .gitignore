@@ -11,3 +11,4 @@ festa-rocca-2026.json
 # Vari
 node_modules/
 .DS_Store
+.idea

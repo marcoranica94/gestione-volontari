@@ -604,10 +604,15 @@
     thead.append(el("th", {}, "Tot"));
     table.append(el("thead", {}, thead));
 
-    // celle dei totali giornalieri (popolate dopo il tbody)
+    // celle dei totali giornalieri (popolate dopo il tbody e nella vista mobile)
     const dayTotCells = {};
+    const addDayTotCell = (day, node) => {
+      if (!dayTotCells[day]) dayTotCells[day] = [];
+      dayTotCells[day].push(node);
+    };
 
     const tbody = el("tbody", {});
+    const mobileCards = el("div", { class: "shift-cards" });
     for (const a of ass) {
       const v = volById(a.volontarioId);
       const tr = el("tr", {});
@@ -616,6 +621,45 @@
         el("button", { class: "rmx", title: "Rimuovi da questa postazione",
           onclick: () => removeAssegnazione(a) }, "×"));
       tr.append(nameTd);
+      const mobileTotCell = el("span", { class: "pill mobile-vol-total" }, "Tot " + countP(a.giorni));
+      const mobileDays = el("div", { class: "shift-day-grid" });
+
+      function updateCells(day, buttons, totCell, mobileTot) {
+        if (guardReadonly()) return;
+        a.giorni[day] = nextStato(a.giorni[day]);
+        const btns = Array.isArray(buttons) ? buttons : [buttons];
+        btns.forEach((btn) => {
+          btn.className = "cellbtn " + a.giorni[day];
+          btn.textContent = a.giorni[day];
+          btn.title = STATO_LABEL[a.giorni[day]];
+        });
+        const total = countP(a.giorni);
+        totCell.textContent = total;
+        mobileTot.textContent = "Tot " + total;
+        save();
+        // avviso conflitto
+        if (a.giorni[day] === "P" && pCountOnDay(a.volontarioId, day) >= 2) {
+          const others = DB.assegnazioni.filter(
+            (x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[day] === "P"
+          );
+          const names = others.map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ");
+          toast("⚠️ " + v.nome + " è già P a: " + names);
+          btns.forEach((btn) => {
+            btn.classList.add("conflict");
+            btn.title = STATO_LABEL["P"] + " · anche a: " + names;
+          });
+        }
+        // aggiorna totale del giorno
+        const cells = dayTotCells[day] || [];
+        if (cells.length) {
+          const n = ass.filter((x) => x.giorni[day] === "P").length;
+          cells.forEach((tc) => {
+            tc.textContent = String(n);
+            tc.className = tc.className.replace(/\btot-(ok|warn|bad|neu)\b/g, "").trim() + " " + sogliaCls(p.id, n);
+          });
+        }
+      }
+
       DB.festa.date.forEach((d) => {
         const isConflict = a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2;
         const conflictNames = isConflict ? DB.assegnazioni.filter(
@@ -625,52 +669,52 @@
           class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
           title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche a: " + conflictNames : ""),
         }, a.giorni[d]);
-        btn.addEventListener("click", () => {
-          if (guardReadonly()) return;
-          a.giorni[d] = nextStato(a.giorni[d]);
-          btn.className = "cellbtn " + a.giorni[d];
-          btn.textContent = a.giorni[d];
-          btn.title = STATO_LABEL[a.giorni[d]];
-          totCell.textContent = countP(a.giorni);
-          save();
-          // avviso conflitto
-          if (a.giorni[d] === "P" && pCountOnDay(a.volontarioId, d) >= 2) {
-            const others = DB.assegnazioni.filter(
-              (x) => x !== a && x.volontarioId === a.volontarioId && x.giorni[d] === "P"
-            );
-            const names = others.map((x) => posInfo(x.postazioneId)?.nome || "?").join(", ");
-            toast("⚠️ " + v.nome + " è già P a: " + names);
-            btn.classList.add("conflict");
-            btn.title = STATO_LABEL["P"] + " · anche a: " + names;
-          }
-          // aggiorna totale del giorno
-          const tc = dayTotCells[d];
-          if (tc) {
-            const n = ass.filter((x) => x.giorni[d] === "P").length;
-            tc.textContent = String(n);
-            tc.className = "day-tot-cell " + sogliaCls(p.id, n);
-          }
-        });
         tr.append(el("td", {}, btn));
+
+        const mobileBtn = el("button", {
+          class: "cellbtn " + a.giorni[d] + (isConflict ? " conflict" : ""),
+          title: STATO_LABEL[a.giorni[d]] + (isConflict ? " · anche a: " + conflictNames : ""),
+        }, a.giorni[d]);
+        const linkedButtons = [btn, mobileBtn];
+        btn.addEventListener("click", () => updateCells(d, linkedButtons, totCell, mobileTotCell));
+        mobileBtn.addEventListener("click", () => updateCells(d, linkedButtons, totCell, mobileTotCell));
+        mobileDays.append(el("div", { class: "shift-day" },
+          el("span", { class: "shift-day-label" }, DB.festa.label[DB.festa.date.indexOf(d)] || d),
+          mobileBtn));
       });
       const totCell = el("td", { class: "tot" }, String(countP(a.giorni)));
       tr.append(totCell);
       tbody.append(tr);
+
+      mobileCards.append(el("div", { class: "shift-card" },
+        el("div", { class: "shift-card-head" },
+          el("button", { class: "shift-name", onclick: () => personDetail(v.id) }, v.nome),
+          mobileTotCell,
+          el("button", { class: "rmx", title: "Rimuovi da questa postazione",
+            onclick: () => removeAssegnazione(a) }, "×")),
+        mobileDays));
     }
     table.append(tbody);
 
     // riga totali per giorno
     const tfootRow = el("tr", {}, el("td", { class: "name day-tot-label" }, "Presenti"));
+    const mobileTotals = el("div", { class: "mobile-day-totals" },
+      el("div", { class: "mobile-day-totals-title" }, "Presenti"));
     DB.festa.date.forEach((d) => {
       const n = ass.filter((a) => a.giorni[d] === "P").length;
       const td = el("td", { class: "day-tot-cell " + sogliaCls(p.id, n) }, String(n));
-      dayTotCells[d] = td;
+      addDayTotCell(d, td);
       tfootRow.append(td);
+      const mtd = el("span", { class: "mobile-day-total-cell " + sogliaCls(p.id, n) }, String(n));
+      addDayTotCell(d, mtd);
+      mobileTotals.append(el("div", { class: "mobile-day-total" },
+        el("span", { class: "shift-day-label" }, DB.festa.label[DB.festa.date.indexOf(d)] || d),
+        mtd));
     });
     tfootRow.append(el("td", {}));
     table.append(el("tfoot", {}, tfootRow));
 
-    block.append(el("div", { class: "tablewrap" }, table));
+    block.append(el("div", { class: "tablewrap pos-tablewrap" }, table), mobileCards, mobileTotals);
     return block;
   }
   function removeAssegnazione(a) {
@@ -758,62 +802,72 @@
     return wrap;
   }
 
-  /* ============ stampa A5 (1-2 fogli per area) ============ */
+  /* ============ stampa A5 postazioni (2 pagine) ============ */
   function buildPrint() {
-    const area = $("#printArea");
-    area.innerHTML = "";
-    setPageSize("size:A5 landscape;margin:7mm 8mm");
+    const printArea = $("#printArea");
+    printArea.innerHTML = "";
+    setPageSize("size:A5 landscape;margin:5mm 6mm");
     window.addEventListener("afterprint", () => setPageSize(""), { once: true });
 
     const range = DB.festa.label[0] + " – " + DB.festa.label[DB.festa.label.length - 1] + " luglio 2026";
+    const mid = Math.ceil(DB.aree.length / 2);
+    const pages = [DB.aree.slice(0, mid), DB.aree.slice(mid)].filter((items) => items.length);
 
-    DB.aree.forEach((a, ai) => {
-      const page = el("div", { class: "p-area" + (ai < DB.aree.length - 1 ? " p-break" : "") });
+    pages.forEach((pageAree, pageIdx) => {
+      const page = el("div", { class: "p-page" + (pageIdx < pages.length - 1 ? " p-break" : "") });
       page.append(el("div", { class: "p-head" },
-        el("h1", {}, DB.festa.nome + " · " + a.nome),
-        el("div", { class: "d" }, range)));
+        el("h1", {}, DB.festa.nome + " · Postazioni"),
+        el("div", { class: "d" }, range + " · pagina " + (pageIdx + 1) + "/" + pages.length)));
 
-      for (const p of a.postazioni) {
-        const ass = assegByPos(p.id).slice()
-          .sort((x, y) => volById(x.volontarioId).nome.localeCompare(volById(y.volontarioId).nome, "it"));
-        const sec = el("div", { class: "p-pos-sec" });
-        sec.append(el("div", { class: "p-pos-title" }, p.nome));
-        if (!ass.length) { sec.append(el("div", { class: "p-empty" }, "—")); page.append(sec); continue; }
+      pageAree.forEach((a, localIdx) => {
+        const ai = DB.aree.findIndex((x) => x.id === a.id);
+        const areaSec = el("section", { class: "p-area", style: "--ac:" + areaColor(a.id, ai) },
+          el("h2", { class: "p-area-title" }, a.nome));
 
-        const t = el("table", { class: "p-grid" });
-        const hr = el("tr", {}, el("th", { class: "pn" }, "Volontario"));
-        DB.festa.label.forEach((l) => {
-          const parts = l.split(" ");
-          hr.append(el("th", {}, el("span", {}, parts[0] || ""), el("br", {}), el("span", {}, parts[1] || "")));
-        });
-        hr.append(el("th", { class: "ptot" }, "Tot"));
-        t.append(el("thead", {}, hr));
+        for (const p of a.postazioni) {
+          const ass = assegByPos(p.id).slice()
+            .sort((x, y) => volById(x.volontarioId).nome.localeCompare(volById(y.volontarioId).nome, "it"));
+          const sec = el("div", { class: "p-pos-sec" });
+          sec.append(el("div", { class: "p-pos-title" }, p.nome));
+          if (!ass.length) { sec.append(el("div", { class: "p-empty" }, "—")); areaSec.append(sec); continue; }
 
-        const tb = el("tbody", {});
-        for (const x of ass) {
-          const tr = el("tr", {}, el("td", { class: "pn" }, volById(x.volontarioId).nome));
-          DB.festa.date.forEach((dd) => {
-            const s = x.giorni[dd];
-            tr.append(el("td", { class: "cS " + "c" + s }, s === "A" ? "" : s));
+          const t = el("table", { class: "p-grid" });
+          const hr = el("tr", {}, el("th", { class: "pn" }, "Volontario"));
+          DB.festa.label.forEach((l) => {
+            const parts = l.split(" ");
+            hr.append(el("th", {}, el("span", {}, parts[0] || ""), el("br", {}), el("span", {}, parts[1] || "")));
           });
-          tr.append(el("td", { class: "ptot" }, String(countP(x.giorni))));
-          tb.append(tr);
+          hr.append(el("th", { class: "ptot" }, "Tot"));
+          t.append(el("thead", {}, hr));
+
+          const tb = el("tbody", {});
+          for (const x of ass) {
+            const tr = el("tr", {}, el("td", { class: "pn" }, volById(x.volontarioId).nome));
+            DB.festa.date.forEach((dd) => {
+              const s = x.giorni[dd];
+              tr.append(el("td", { class: "cS " + "c" + s }, s === "A" ? "" : s));
+            });
+            tr.append(el("td", { class: "ptot" }, String(countP(x.giorni))));
+            tb.append(tr);
+          }
+          t.append(tb);
+
+          // riga totali
+          const tf = el("tr", { class: "p-tot-row" }, el("td", { class: "pn p-tot-lbl" }, "Presenti"));
+          DB.festa.date.forEach((dd) => {
+            const n = ass.filter((x) => x.giorni[dd] === "P").length;
+            tf.append(el("td", { class: "ptot-day " + sogliaCls(p.id, n) }, String(n)));
+          });
+          tf.append(el("td", {}));
+          t.append(el("tfoot", {}, tf));
+
+          sec.append(t);
+          areaSec.append(sec);
         }
-        t.append(tb);
-
-        // riga totali
-        const tf = el("tr", { class: "p-tot-row" }, el("td", { class: "pn p-tot-lbl" }, "Presenti"));
-        DB.festa.date.forEach((dd) => {
-          const n = ass.filter((x) => x.giorni[dd] === "P").length;
-          tf.append(el("td", { class: "ptot-day " + sogliaCls(p.id, n) }, String(n)));
-        });
-        tf.append(el("td", {}));
-        t.append(el("tfoot", {}, tf));
-
-        sec.append(t);
-        page.append(sec);
-      }
-      area.append(page);
+        if (localIdx > 0) areaSec.classList.add("p-area-compact");
+        page.append(areaSec);
+      });
+      printArea.append(page);
     });
     window.print();
   }
