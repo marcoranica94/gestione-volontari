@@ -964,71 +964,73 @@
     return wrap;
   }
 
-  /* ============ stampa A5 postazioni (2 pagine) ============ */
+  /* ============ stampa A5 postazioni (1 pagina per area) ============ */
   function buildPrint() {
     const printArea = $("#printArea");
     printArea.innerHTML = "";
-    setPageSize("size:A5 landscape;margin:5mm 6mm");
+    setPageSize("size:A5 landscape;margin:2mm 3mm");
     window.addEventListener("afterprint", () => setPageSize(""), { once: true });
 
     const range = DB.festa.label[0] + " – " + DB.festa.label[DB.festa.label.length - 1] + " luglio 2026";
-    const mid = Math.ceil(DB.aree.length / 2);
-    const pages = [DB.aree.slice(0, mid), DB.aree.slice(mid)].filter((items) => items.length);
+    const order = ["puliz", "client", "cucin"];
+    const printAree = DB.aree.slice().sort((a, b) => {
+      const an = a.nome.toLowerCase();
+      const bn = b.nome.toLowerCase();
+      const ai = order.findIndex((x) => an.includes(x));
+      const bi = order.findIndex((x) => bn.includes(x));
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
 
-    pages.forEach((pageAree, pageIdx) => {
-      const page = el("div", { class: "p-page" + (pageIdx < pages.length - 1 ? " p-break" : "") });
+    printAree.forEach((a, pageIdx) => {
+      const ai = DB.aree.findIndex((x) => x.id === a.id);
+      const page = el("div", { class: "p-page" + (pageIdx < printAree.length - 1 ? " p-break" : "") });
       page.append(el("div", { class: "p-head" },
-        el("h1", {}, DB.festa.nome + " · Postazioni"),
-        el("div", { class: "d" }, range + " · pagina " + (pageIdx + 1) + "/" + pages.length)));
+        el("h1", {}, DB.festa.nome + " · " + a.nome),
+        el("div", { class: "d" }, range + " · pagina " + (pageIdx + 1) + "/" + printAree.length)));
 
-      pageAree.forEach((a, localIdx) => {
-        const ai = DB.aree.findIndex((x) => x.id === a.id);
-        const areaSec = el("section", { class: "p-area", style: "--ac:" + areaColor(a.id, ai) },
-          el("h2", { class: "p-area-title" }, a.nome));
+      const posCols = el("div", { class: "p-pos-cols" });
+      const areaSec = el("section", { class: "p-area", style: "--ac:" + areaColor(a.id, ai) },
+        el("h2", { class: "p-area-title" }, a.nome),
+        posCols);
 
-        for (const p of a.postazioni) {
-          const ass = assegByPos(p.id).slice()
-            .sort((x, y) => volById(x.volontarioId).nome.localeCompare(volById(y.volontarioId).nome, "it"));
-          const sec = el("div", { class: "p-pos-sec" });
-          sec.append(el("div", { class: "p-pos-title" }, p.nome));
-          if (!ass.length) { sec.append(el("div", { class: "p-empty" }, "—")); areaSec.append(sec); continue; }
+      for (const p of a.postazioni) {
+        const ass = assegByPos(p.id).slice()
+          .sort((x, y) => volById(x.volontarioId).nome.localeCompare(volById(y.volontarioId).nome, "it"));
+        const sec = el("div", { class: "p-pos-sec" });
+        sec.append(el("div", { class: "p-pos-title" }, p.nome));
+        if (!ass.length) { sec.append(el("div", { class: "p-empty" }, "—")); posCols.append(sec); continue; }
 
-          const t = el("table", { class: "p-grid" });
-          const hr = el("tr", {}, el("th", { class: "pn" }, "Volontario"));
-          DB.festa.label.forEach((l) => {
-            const parts = l.split(" ");
-            hr.append(el("th", {}, el("span", {}, parts[0] || ""), el("br", {}), el("span", {}, parts[1] || "")));
-          });
-          hr.append(el("th", { class: "ptot" }, "Tot"));
-          t.append(el("thead", {}, hr));
+        const t = el("table", { class: "p-grid" });
+        const hr = el("tr", {}, el("th", { class: "pn" }, "Volontario"));
+        DB.festa.label.forEach((l) => {
+          const parts = l.split(" ");
+          hr.append(el("th", {}, el("span", {}, parts[0] || ""), el("br", {}), el("span", {}, parts[1] || "")));
+        });
+        t.append(el("thead", {}, hr));
 
-          const tb = el("tbody", {});
-          for (const x of ass) {
-            const tr = el("tr", {}, el("td", { class: "pn" }, volById(x.volontarioId).nome));
-            DB.festa.date.forEach((dd) => {
-              const s = x.giorni[dd];
-              tr.append(el("td", { class: "cS " + "c" + s }, s === "A" ? "" : s));
-            });
-            tr.append(el("td", { class: "ptot" }, String(countP(x.giorni))));
-            tb.append(tr);
-          }
-          t.append(tb);
-
-          // riga totali
-          const tf = el("tr", { class: "p-tot-row" }, el("td", { class: "pn p-tot-lbl" }, "Presenti"));
+        const tb = el("tbody", {});
+        for (const x of ass) {
+          const tr = el("tr", {}, el("td", { class: "pn" }, volById(x.volontarioId).nome));
           DB.festa.date.forEach((dd) => {
-            const n = ass.filter((x) => x.giorni[dd] === "P").length;
-            tf.append(el("td", { class: "ptot-day " + sogliaCls(p.id, n) }, String(n)));
+            const s = x.giorni[dd];
+            tr.append(el("td", { class: "cS " + "c" + s }, s));
           });
-          tf.append(el("td", {}));
-          t.append(el("tfoot", {}, tf));
-
-          sec.append(t);
-          areaSec.append(sec);
+          tb.append(tr);
         }
-        if (localIdx > 0) areaSec.classList.add("p-area-compact");
-        page.append(areaSec);
-      });
+        t.append(tb);
+
+        // riga totali
+        const tf = el("tr", { class: "p-tot-row" }, el("td", { class: "pn p-tot-lbl" }, "Presenti"));
+        DB.festa.date.forEach((dd) => {
+          const n = ass.filter((x) => x.giorni[dd] === "P").length;
+          tf.append(el("td", { class: "ptot-day " + sogliaCls(p.id, n) }, String(n)));
+        });
+        t.append(el("tfoot", {}, tf));
+
+        sec.append(t);
+        posCols.append(sec);
+      }
+      page.append(areaSec);
       printArea.append(page);
     });
     window.print();

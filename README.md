@@ -14,7 +14,7 @@ Funziona aprendo `index.html` nel browser oppure online su GitHub Pages.
   volontari × 10 giorni. Clic su una cella per ciclare **P → A → L**:
   - 🟢 **P** = Presente · 🔴 **A** = Assente · 🟡 **L** = Altra locazione
 - **Per giorno**: scegli il giorno e vedi chi è presente in ogni postazione.
-- **Stampa A5**: 2 pagine A5 orizzontali con colori di area e stato.
+- **Stampa A5**: 3 pagine A5 orizzontali, una per area, con colori di area e stato.
 - **Importa / Esporta** i dati in JSON.
 
 ## Privacy
